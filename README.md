@@ -143,6 +143,11 @@ For coverage analysis and visualization, unCOVERApp accepts:
 - Minimum base quality
 
 For more details on working with unCOVERApp see Vignette.
+## Test
+I test automatici di questo package si trovano nella cartella tests/testthat, originariamente sviluppati nella cartella inst/Test
+- example.list
+- example_gene.txt
+
 
 ## Usage
 
