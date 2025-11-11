@@ -4,7 +4,7 @@ This repository is home of R package uncoverappLib launching *unCOVERApp*,
 a web application for clinical assessment and annotation of coverage gaps in
 target genes. Read more about unCOVERApp on [biorxiv](https://www.biorxiv.org/content/10.1101/2020.02.10.939769v1)
 
-[![DOI](https://zenodo.org/badge/254597958.svg)](https://zenodo.org/badge/latestdoi/254597958)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.17524340.svg)](https://doi.org/10.5281/zenodo.17524340)
 
 # Table of content
 
@@ -21,7 +21,7 @@ This app requires following dependencies:
 
 - R >= 4.0.0
 - Java installed 
-- Annotation files (`sorted_hg19.bed.gz`, `sorted_hg19.bed.gz.tbi`, `sorted_hg38.bed.gz`, `sorted_hg38.bed.gz.tbi`) downloadable via [Zenodo](https://zenodo.org/record/3747448#.XpBmnVMzbOR) with the `getAnnotationFiles()` function of *uncoverappLib*.
+- Annotation files (`sorted_hg19.bed.gz`, `sorted_hg19.bed.gz.tbi`, `sorted_hg38.bed.gz`, `sorted_hg38.bed.gz.tbi`) downloadable via [Zenodo](https://zenodo.org/records/17524340) with the `getAnnotationFiles()` function of *uncoverappLib*.
 
 ## Installation
 
@@ -39,11 +39,6 @@ The development version can be installed directly from Github:
 install.packages("devtools")
 devtools::install_github("Manuelaio/uncoverappLib")
 ```
-
-Major informations about unCOVERApp R dependences are 
-[here](https://github.com/Manuelaio/test_dependence).
-
-[![Build Status](https://travis-ci.com/Manuelaio/test_dependence.svg?branch=master)](https://travis-ci.com/Manuelaio/test_dependence)
 
 ## Introduction
 
@@ -82,7 +77,7 @@ version 4.0 stored in four files:
 * `sorted_hg38.bed.gz.tbi`: TABIX-indexed file for hg38
 
 Those files are stored on Zenodo at the following
-[link](https://zenodo.org/record/3747448#.XpBmnVMzbOR) for downloading. 
+[link](https://zenodo.org/records/17524340) for downloading.
 
 The annotation files enclose prediction scores (MutationAssessor, SIFT, CADD, 
 M-CAP, Polyphen2-HVAR), allele frequencies observed in 
@@ -200,8 +195,7 @@ run.uncoverapp(where = "viewer")
 - Visual plots with Gviz
 - Export to formatted Excel files
 
-For detailed interactive workflow, see [Documentation.pdf](https://github.com/Manuelaio/unCOVERApp/blob/master/Documentation.pdf).
-
+For more details, see the package vignettes and examples above.
 ---
 
 ### Batch Mode (Command-Line)
@@ -285,7 +279,6 @@ for (sample in samples) {
 
 For detailed batch processing examples, see the package vignettes.
 ```
-
 ---
 User can define where uncoverapp will be launched with the `where` option:
 
