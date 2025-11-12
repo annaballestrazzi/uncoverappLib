@@ -4,10 +4,8 @@
 #'
 #' @param assembly (character) Reference genome: "hg19", "hg38"
 #' @param verbose (logical) print messages
-#' @param vignette (logical) download example annotation-file in vignette mode
 #' @examples
 #' getAnnotationFiles(assembly = "hg38", verbose = TRUE)
-#' getAnnotationFiles(assembly = "all", verbose = TRUE)
 
 #' @return Named list with paths to annotation files for each assembly
 #' @export
