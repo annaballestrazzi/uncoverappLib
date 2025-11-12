@@ -21,5 +21,4 @@ Downloads or retrieves annotation files for the specified genome assembly
 }
 \examples{
 getAnnotationFiles(assembly = "hg38", verbose = TRUE)
-getAnnotationFiles(assembly = "all", verbose = TRUE)
 }
