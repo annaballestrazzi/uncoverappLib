@@ -162,11 +162,24 @@ chr1    102    103    18
 
 **Columns:**
 - Column 1: Chromosome (with or without 'chr' prefix)
-- Column 2: Start position (0-based for BED files)
+- Column 2: Start position
 - Column 3: End position
 - Column 4: Coverage depth
 
-**Important:** BED coverage files should use **0-based coordinates**.
+**Important - Coordinate System:** 
+
+Specify the coordinate system used by your BED files:
+
+- **0-based (default)**: Standard BED format
+  - Most common: `bedtools genomecov -bg`, `samtools depth`
+  - Intervals: `[start, end)` half-open
+  
+- **1-based**: Some tools use 1-based output
+  - Less common for BED files
+  - Intervals: `[start, end]` closed
+
+The app will convert coordinates internally to 1-based for visualization. 
+Select the correct input system in the UI or when calling `buildInput()`.
 
 When running `buildInput()` with BED coverage:
 ```r
