@@ -47,10 +47,8 @@ check_annotations()
 ### Step 3: Launch App
 ```r
 # Launch interactive app
-uncoverappLib.run()
+run.uncoverapp()
 ```
-
-**That's it!** 🎉 The app will open in your browser.
 
 ---
 
@@ -122,7 +120,7 @@ packageVersion("uncoverappLib")  # Should show 1.10.0 or higher
 library(uncoverappLib)
 
 # Launch in browser (recommended)
-uncoverappLib.run()
+run.uncoverapp()
 
 # Or specify window
 run.uncoverapp(where = "browser")  # Default browser
@@ -438,7 +436,7 @@ buildInput(
 ### Example 4: Interactive App - Region-Specific Analysis (BRCA1 Exon 11)
 ```r
 # Launch app for manual analysis
-uncoverappLib.run()
+run.uncoverapp()
 
 # In the app interface:
 # 1. Load your coverage file (WGS.bed.gz)
