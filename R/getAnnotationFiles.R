@@ -42,30 +42,48 @@ getAnnotationFiles <- function(assembly = c("hg19", "hg38"), verbose = FALSE) {
   )
   
   # Download function
-  download_file <- function(assembly_name, file_type) {
-    filename <- files[[assembly_name]][file_type]
-    local_path <- file.path(cache_dir, filename)
+ download_file <- function(assembly_name, file_type) {
+  filename <- files[[assembly_name]][file_type]
+  local_path <- file.path(cache_dir, filename)
+  
+  # Check if file already exists
+  if (file.exists(local_path)) {
+    if (verbose) cat("File already exists:", local_path, "\n")
+    return(local_path)
+  }
+  
+  url <- paste0(base_url, filename)
+  if (verbose) {
+    cat("Downloading:", filename, "\n")
+    cat("This may take several minutes for large files...\n")
+  }
+  
+  # Save and modify timeout
+  old_timeout <- getOption("timeout")
+  options(timeout = max(10000, old_timeout))
+  on.exit(options(timeout = old_timeout))
+  
+  tryCatch({
+    download.file(url, local_path, mode = "wb", quiet = !verbose, method = "libcurl")
     
-    # Check if file already exists
-    if (file.exists(local_path)) {
-      if (verbose) cat("File already exists:", local_path, "\n")
-      return(local_path)
+    # Verify file was downloaded completely
+    if (!file.exists(local_path) || file.size(local_path) == 0) {
+      stop("Download completed but file is missing or empty")
     }
     
-    # Download
-    url <- paste0(base_url, filename)
-    if (verbose) cat("Downloading:", filename, "\n")
+    if (verbose) cat("✓ Downloaded to:", local_path, "\n")
+    return(local_path)
     
-    tryCatch({
-      # *** ADDED: method = "libcurl" for reliability ***
-      download.file(url, local_path, mode = "wb", quiet = !verbose, timeout = 10000000, method = "libcurl")
-      if (verbose) cat("Downloaded to:", local_path, "\n")
-      return(local_path)
-    }, error = function(e) {
-      warning("Failed to download ", filename, ": ", e$message)
-      return(NULL)
-    })
-  }
+  }, error = function(e) {
+    # Clean up partial download
+    if (file.exists(local_path)) {
+      file.remove(local_path)
+      if (verbose) cat("Removed incomplete download\n")
+    }
+    warning("Failed to download ", filename, ": ", e$message, call. = FALSE)
+    return(NULL)
+  })
+}
   
   # Download files for requested assemblies
   result <- list()
