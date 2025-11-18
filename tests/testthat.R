@@ -1,6 +1,5 @@
 # tests/testthat.R
-# File di setup per testthat - esegue tutti i test nella cartella testthat/
-
+# This file is used by R CMD check to run tests
 library(testthat)
 library(uncoverappLib)
 

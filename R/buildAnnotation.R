@@ -165,7 +165,7 @@ annotate_all_lowcov <- function(sample_data,
   bedA <- data.frame(
     chromosome = df$chromosome,
     start = df$start,
-    end = df$start,
+    end = df$end,
     coverage = df[[actual_column]],
     stringsAsFactors = FALSE
   )
@@ -388,6 +388,26 @@ annotate_all_lowcov <- function(sample_data,
     }
   }
   
+  # ==============================================================================
+  # DEDUPLICATION: Keep only most important variant per position
+  # ==============================================================================
+
+  cat("\n=== DEDUPLICATING VARIANTS ===\n")
+  cat("Variants before deduplication:", nrow(intersect_df), "\n")
+
+  # Sort by importance (pathogenic > high CADD > rare)
+  intersect_df <- intersect_df %>%
+    dplyr::arrange(
+      seqnames, start, end, coverage,
+      ClinVar != ".",                          # Pathogenic/Likely pathogenic first
+      desc(CADD_PHED),                         # High CADD score first
+      AF_gnomAD                                # Rare variants first (low AF)
+    )
+    
+
+  cat("Variants after deduplication:", nrow(intersect_df), "\n")
+  cat("Duplicates removed:", nrow(bed2_hits) - nrow(intersect_df), "\n\n")
+
   if (all(c("MutationAssessor", "ClinVar", "AF_gnomAD") %in% colnames(intersect_df))) {
     intersect_df$highlight_important <- grepl("H|M", intersect_df$MutationAssessor) & 
       intersect_df$ClinVar != "." & 
@@ -415,57 +435,208 @@ annotate_all_lowcov <- function(sample_data,
   cat("Saved intersect output:", output_intersect, "\n")
   
   if (grepl("\\.xlsx?$", output_formatted, ignore.case = TRUE)) {
-    cat("Creating formatted Excel file...\n")
-    excel_time <- Sys.time()
+  cat("Creating formatted Excel file...\n")
+  excel_time <- Sys.time()
+  
+  wb <- openxlsx::createWorkbook()
+  openxlsx::addWorksheet(wb, "Low Coverage Variants")
+  openxlsx::writeData(wb, "Low Coverage Variants", intersect_df)
+  
+  # ============================================================================
+  # HEADER STYLE
+  # ============================================================================
+  headerStyle <- openxlsx::createStyle(
+    fontColour = "#FFFFFF", 
+    fgFill = "#4F81BD",
+    halign = "center", 
+    textDecoration = "Bold",
+    border = "TopBottomLeftRight"
+  )
+  openxlsx::addStyle(wb, "Low Coverage Variants", headerStyle, 
+                     rows = 1, cols = 1:ncol(intersect_df), gridExpand = TRUE)
+  
+  # Freeze header + auto-width
+  openxlsx::freezePane(wb, "Low Coverage Variants", firstRow = TRUE)
+  openxlsx::setColWidths(wb, "Low Coverage Variants", 
+                         cols = 1:ncol(intersect_df), widths = "auto")
+  
+  # ============================================================================
+  # CONDITIONAL FORMATTING (FAST - NO LOOPS!)
+  # ============================================================================
+  
+  nrows <- nrow(intersect_df)
+  
+  # Styles (create once, reuse)
+  redStyle <- openxlsx::createStyle(fgFill = "#FFB6C1")    # Light red/pink
+  greenStyle <- openxlsx::createStyle(fgFill = "#90EE90")  # Light green
+  yellowStyle <- openxlsx::createStyle(fgFill = "#FFFF99") # Yellow
+  
+  # ──────────────────────────────────────────────────────────────────────────
+  # ClinVar: Red if pathogenic, Green if benign
+  # ──────────────────────────────────────────────────────────────────────────
+  if ("ClinVar" %in% colnames(intersect_df)) {
+    clinvar_col <- which(colnames(intersect_df) == "ClinVar")
     
-    wb <- createWorkbook()
-    addWorksheet(wb, "Low Coverage Variants")
-    writeData(wb, "Low Coverage Variants", intersect_df)
+    # Red for pathogenic (NOT ".")
+    openxlsx::conditionalFormatting(
+      wb, "Low Coverage Variants",
+      cols = clinvar_col,
+      rows = 2:(nrows + 1),
+      rule = '!="."',
+      style = redStyle
+    )
     
-    headerStyle <- createStyle(fontColour = "#FFFFFF", fgFill = "#4F81BD",
-                               halign = "center", textDecoration = "Bold",
-                               border = "TopBottomLeftRight")
-    addStyle(wb, "Low Coverage Variants", headerStyle, rows = 1, 
-             cols = 1:ncol(intersect_df), gridExpand = TRUE)
-
-    setColWidths(wb, "Low Coverage Variants", cols = 1:ncol(intersect_df), widths = "auto")
-    freezePane(wb, "Low Coverage Variants", firstRow = TRUE)
-
-    # ClinVar coloring
-    if ("ClinVar" %in% colnames(intersect_df)) {
-      clinvar_col <- which(colnames(intersect_df) == "ClinVar")
-      for (i in 1:nrow(intersect_df)) {
-        style <- if (intersect_df$ClinVar[i] == ".") {
-          createStyle(fgFill = "#90EE90")
-        } else {
-          createStyle(fgFill = "#FFB6C1")
-        }
-        addStyle(wb, "Low Coverage Variants", style, rows = i + 1, cols = clinvar_col)
-      }
-    }
-    
-    # CADD_PHED coloring
-    if ("CADD_PHED" %in% colnames(intersect_df)) {
-      cadd_col <- which(colnames(intersect_df) == "CADD_PHED")
-      for (i in 1:nrow(intersect_df)) {
-        val <- intersect_df$CADD_PHED[i]
-        style <- if (!is.na(val) && val > 20) {
-          createStyle(fgFill = "#FFB6C1")
-        } else if (!is.na(val)) {
-          createStyle(fgFill = "#90EE90")
-        } else {
-          NULL
-        }
-        if (!is.null(style)) addStyle(wb, "Low Coverage Variants", style, rows = i + 1, cols = cadd_col)
-      }
-    }
-    
-    saveWorkbook(wb, output_formatted, overwrite = TRUE)
-    cat("Saved formatted output:", output_formatted, "\n")
-    cat(paste("Excel formatting took:", 
-              round(difftime(Sys.time(), excel_time, units = "secs"), 2), 
-              "seconds\n"))
+    # Green for benign (".")
+    openxlsx::conditionalFormatting(
+      wb, "Low Coverage Variants",
+      cols = clinvar_col,
+      rows = 2:(nrows + 1),
+      rule = '="."',
+      style = greenStyle
+    )
   }
+  
+  # ──────────────────────────────────────────────────────────────────────────
+  # CADD_PHED: Red if >20, Green if <=20
+  # ──────────────────────────────────────────────────────────────────────────
+  if ("CADD_PHED" %in% colnames(intersect_df)) {
+    cadd_col <- which(colnames(intersect_df) == "CADD_PHED")
+    
+    # Red for high CADD (>20)
+    openxlsx::conditionalFormatting(
+      wb, "Low Coverage Variants",
+      cols = cadd_col,
+      rows = 2:(nrows + 1),
+      rule = ">20",
+      style = redStyle
+    )
+    
+    # Green for low CADD (<=20)
+    openxlsx::conditionalFormatting(
+      wb, "Low Coverage Variants",
+      cols = cadd_col,
+      rows = 2:(nrows + 1),
+      rule = "<=20",
+      style = greenStyle
+    )
+  }
+  
+  # ──────────────────────────────────────────────────────────────────────────
+  # MutationAssessor: Red for H, Yellow for M, Green for others
+  # ──────────────────────────────────────────────────────────────────────────
+  if ("MutationAssessor" %in% colnames(intersect_df)) {
+    ma_col <- which(colnames(intersect_df) == "MutationAssessor")
+    
+    # Red for High impact
+    openxlsx::conditionalFormatting(
+      wb, "Low Coverage Variants",
+      cols = ma_col,
+      rows = 2:(nrows + 1),
+      rule = '="H"',
+      style = redStyle
+    )
+    
+    # Yellow for Medium impact
+    openxlsx::conditionalFormatting(
+      wb, "Low Coverage Variants",
+      cols = ma_col,
+      rows = 2:(nrows + 1),
+      rule = '="M"',
+      style = yellowStyle
+    )
+    
+    # Green for Low/Neutral (not H or M)
+    openxlsx::conditionalFormatting(
+      wb, "Low Coverage Variants",
+      cols = ma_col,
+      rows = 2:(nrows + 1),
+      rule = 'AND($A2<>"H", $A2<>"M")',  # Not H and not M
+      style = greenStyle
+    )
+  }
+  
+  # ──────────────────────────────────────────────────────────────────────────
+  # M_CAP: Red if Deleterious (D), Green otherwise
+  # ──────────────────────────────────────────────────────────────────────────
+  if ("M_CAP" %in% colnames(intersect_df)) {
+    mcap_col <- which(colnames(intersect_df) == "M_CAP")
+    
+    # Red for Deleterious
+    openxlsx::conditionalFormatting(
+      wb, "Low Coverage Variants",
+      cols = mcap_col,
+      rows = 2:(nrows + 1),
+      rule = '="D"',
+      style = redStyle
+    )
+    
+    # Green for non-deleterious
+    openxlsx::conditionalFormatting(
+      wb, "Low Coverage Variants",
+      cols = mcap_col,
+      rows = 2:(nrows + 1),
+      rule = '!="D"',
+      style = greenStyle
+    )
+  }
+  
+  # ──────────────────────────────────────────────────────────────────────────
+  # AF_gnomAD: Red if rare (<0.01), Green if common (>=0.01)
+  # ──────────────────────────────────────────────────────────────────────────
+  if ("AF_gnomAD" %in% colnames(intersect_df)) {
+    af_col <- which(colnames(intersect_df) == "AF_gnomAD")
+    
+    # Red for rare variants
+    openxlsx::conditionalFormatting(
+      wb, "Low Coverage Variants",
+      cols = af_col,
+      rows = 2:(nrows + 1),
+      rule = "<0.01",
+      style = redStyle
+    )
+    
+    # Green for common variants
+    openxlsx::conditionalFormatting(
+      wb, "Low Coverage Variants",
+      cols = af_col,
+      rows = 2:(nrows + 1),
+      rule = ">=0.01",
+      style = greenStyle
+    )
+  }
+  
+  # ──────────────────────────────────────────────────────────────────────────
+  # BONUS: Highlight important variants (entire row in yellow)
+  # ──────────────────────────────────────────────────────────────────────────
+  if ("highlight_important" %in% colnames(intersect_df)) {
+    important_rows <- which(intersect_df$highlight_important == TRUE)
+    
+    if (length(important_rows) > 0) {
+      highlightStyle <- openxlsx::createStyle(fgFill = "#FFFF00")  # Yellow
+      
+      # Highlight entire rows (only first few columns to avoid slowdown)
+      for (row in important_rows + 1) {  # +1 for header
+        openxlsx::addStyle(wb, "Low Coverage Variants", 
+                           highlightStyle, 
+                           rows = row, 
+                           cols = 1:min(5, ncol(intersect_df)),  # Only first 5 cols
+                           gridExpand = TRUE,
+                           stack = TRUE)
+      }
+    }
+  }
+  
+  # ============================================================================
+  # SAVE
+  # ============================================================================
+  openxlsx::saveWorkbook(wb, output_formatted, overwrite = TRUE)
+  
+  cat("Saved formatted Excel:", output_formatted, "\n")
+  cat(paste("Excel formatting took:", 
+            round(difftime(Sys.time(), excel_time, units = "secs"), 2), 
+            "seconds\n"))
+}
+  
   cat("Total script execution:",round(difftime(Sys.time(), script_start, units = "secs"), 2),"seconds\n")
   cat("\n=== DONE ===\n")
   invisible(intersect_df)
