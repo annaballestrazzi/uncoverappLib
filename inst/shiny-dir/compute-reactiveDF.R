@@ -218,10 +218,48 @@ get_chromosome_from_gene <- function(gene_name, genome = "hg19") {
 
 
 filtered_low <- eventReactive(input$calc_low_coverage, {
-  req(input$coverage_co, input$Sample)
+  cat("\n=== BUTTON PRESSED: calc_low_coverage ===\n")
+  
+  # ✅ 1. MOSTRA WAITER
+  waiter::waiter_show(
+    html = tagList(
+      waiter::spin_folding_cube(),
+      h3("Calculating low coverage regions...", style = "color: white;"),
+      p("This may take a few minutes", style = "color: white;")
+    ),
+    color = "rgba(0, 0, 0, 0.85)"
+  )
+  
+  # ✅ 2. DISABILITA BOTTONE
+  shinyjs::disable("calc_low_coverage")
+  
+  # ✅ 3. CAMBIA TAB
+  updateTabsetPanel(session, "tabSet", selected = "Low-coverage positions")
+  
+  # ✅ 4. VALIDAZIONE CON ERROR HANDLING
+  if (is.null(input$coverage_co) || input$coverage_co == "") {
+    waiter::waiter_hide()
+    shinyjs::enable("calc_low_coverage")
+    showNotification("Please select a coverage threshold", type = "error", duration = 5)
+    return(data.frame())
+  }
+  
+  if (is.null(input$Sample) || input$Sample == "") {
+    waiter::waiter_hide()
+    shinyjs::enable("calc_low_coverage")
+    showNotification("Please enter a sample name", type = "error", duration = 5)
+    return(data.frame())
+  }
   
   df <- get_sample_data(mydata(), input$Sample)
-  req(df)
+  
+  if (is.null(df) || nrow(df) == 0) {
+    waiter::waiter_hide()
+    shinyjs::enable("calc_low_coverage")
+    showNotification("No data available. Please load a coverage file first.", type = "error", duration = 5)
+    return(data.frame())
+  }
+  
   thr <- input$coverage_co
   
   cat("\n=== FILTERING LOW COVERAGE ===\n")
@@ -240,13 +278,17 @@ filtered_low <- eventReactive(input$calc_low_coverage, {
     }
     
     cat("Result:", nrow(result), "rows\n")
-    return(result)
   }
   # ══════════════════════════════════════════════════════════════════════
   # BRANCH 2: GENE NAME
   # ══════════════════════════════════════════════════════════════════════
-  if (input$filter_by == "gene") {
-    req(input$Gene_name)
+  else if (input$filter_by == "gene") {
+    if (is.null(input$Gene_name) || input$Gene_name == "") {
+      waiter::waiter_hide()
+      shinyjs::enable("calc_low_coverage")
+      showNotification("Please enter a gene name", type = "error", duration = 5)
+      return(data.frame())
+    }
   
     cat("Mode: GENE | Gene:", input$Gene_name, "\n")
   
@@ -271,6 +313,9 @@ filtered_low <- eventReactive(input$calc_low_coverage, {
     
       if (is.null(entrez_info) || nrow(entrez_info) == 0) {
         cat("Gene not found in org.Hs.eg.db\n")
+        waiter::waiter_hide()
+        shinyjs::enable("calc_low_coverage")
+        showNotification(paste("Gene not found:", input$Gene_name), type = "error", duration = 5)
         return(NULL)
       }
     
@@ -304,6 +349,8 @@ filtered_low <- eventReactive(input$calc_low_coverage, {
   
     # Applica filtro coordinate gene
     if (is.null(gene_coords)) {
+      waiter::waiter_hide()
+      shinyjs::enable("calc_low_coverage")
       showNotification(
         paste("Could not find coordinates for gene:", input$Gene_name),
         type = "error",
@@ -334,15 +381,12 @@ filtered_low <- eventReactive(input$calc_low_coverage, {
     }
 
     cat("Result:", nrow(result), "rows\n")
-    return(result)
   }
 
-
-  
   # ══════════════════════════════════════════════════════════════════════
   # BRANCH 3: SINGLE CHROMOSOME
   # ══════════════════════════════════════════════════════════════════════
-  if (input$filter_by == "chromosome") {
+  else if (input$filter_by == "chromosome") {
     req(input$Chromosome)
     chr_val <- input$Chromosome
     
@@ -355,14 +399,13 @@ filtered_low <- eventReactive(input$calc_low_coverage, {
     }
     
     cat("Result:", nrow(result), "rows\n")
-    return(result)
   }
   
   # ══════════════════════════════════════════════════════════════════════
   # BRANCH 4: REGION COORDINATES
   # ══════════════════════════════════════════════════════════════════════
   # REGION overlap or exact match filter
-  if (input$filter_by == "region") {
+  else if (input$filter_by == "region") {
     req(input$query_Database)
   
     region_parts <- tryCatch({
@@ -376,7 +419,12 @@ filtered_low <- eventReactive(input$calc_low_coverage, {
       list(chr = chr_part, start = start_pos, end = end_pos)
     }, error = function(e) NULL)
   
-    req(region_parts)
+    if (is.null(region_parts)) {
+      waiter::waiter_hide()
+      shinyjs::enable("calc_low_coverage")
+      showNotification("Invalid region format. Use chr:start-end", type = "error", duration = 5)
+      return(data.frame())
+    }
   
     if (identical(thr, "all")) {
       # PROVA match esatto
@@ -418,13 +466,40 @@ filtered_low <- eventReactive(input$calc_low_coverage, {
     }
   
     cat("Result:", nrow(result), "rows\n")
-    return(result)
   }
 
   
-  # Fallback
-  showNotification("Invalid filter_by selection", type = "error")
-  return(data.frame())
+  # ══════════════════════════════════════════════════════════════════════
+  # FALLBACK
+  # ══════════════════════════════════════════════════════════════════════
+  else {
+    waiter::waiter_hide()
+    shinyjs::enable("calc_low_coverage")
+    showNotification("Invalid filter_by selection", type = "error", duration = 5)
+    return(data.frame())
+  }
+  
+  # ══════════════════════════════════════════════════════════════════════
+  # FINAL: Hide waiter and notify (for all successful branches)
+  # ══════════════════════════════════════════════════════════════════════
+  waiter::waiter_hide()
+  shinyjs::enable("calc_low_coverage")
+  
+  if (!is.null(result) && nrow(result) > 0) {
+    showNotification(
+      paste("✓ Found", nrow(result), "low coverage positions"),
+      type = "message",
+      duration = 5
+    )
+  } else {
+    showNotification(
+      "⚠ No low coverage positions found with current filters",
+      type = "warning",
+      duration = 5
+    )
+  }
+  
+  return(result)
   
 }, ignoreNULL = TRUE, ignoreInit = TRUE)
 

@@ -12,6 +12,7 @@ require(shinyWidgets)
 require(shinyBS)
 require(shinyjs)
 require(markdown)
+require(waiter) 
 options("browser" = "xdg-open")
 })
 
@@ -84,14 +85,50 @@ preprocess <- function() {
                                            selected = "UCSC genome"),
                         hr(),
                         hr(),
-                        helpText(em("Select filtering parameters for processing your input file")),
-                        radioButtons(
-                            "input_coordinate_system",
-                            "Coverage file (coordinate system):",
-                            choices = c("0-based (BED standard)" = "0-based",
-                                          "1-based (IGV, VCF)" = "1-based"),
-                        selected = "0-based"
+                        shiny::selectInput("type_coverage",
+                                           label = "File format",
+                                           choices = c("BAM file" = "bam",
+                                                       "BED coverage file"= "bed"),
+                                           selected = "bed"),
+                        hr(),
+                        # NUOVO CODICE (con conditional panels):
+
+                        # Parametri BAM (visibili solo se type_coverage == "bam")
+                        conditionalPanel(
+                          condition = "input.type_coverage == 'bam'",
+                          hr(),
+                          h4(strong("BAM File Parameters")),
+                          shinyWidgets::pickerInput("MAPQ",
+                            label = "Minimum Mapping Quality (MAPQ)",
+                            choices = c(1:1000),
+                            options = list(`actions-box` = TRUE), 
+                            multiple = FALSE,
+                            selected = 20),
+  
+                          shinyWidgets::pickerInput("base_qual",
+                            label = "Minimum Base Quality",
+                            choices = c(1:1000),
+                            options = list(`actions-box` = TRUE), 
+                            multiple = FALSE,
+                            selected = 20),
+                          helpText(em("These parameters apply only to BAM pileup processing"))
                         ),
+
+                        # Parametri BED (visibili solo se type_coverage == "bed")
+                        conditionalPanel(
+                          condition = "input.type_coverage == 'bed'",
+                          hr(),
+                          h4(strong("BED Coverage File Parameters")),
+                          radioButtons(
+                            "input_coordinate_system",
+                            "Coordinate system:",
+                            choices = c("0-based (BED standard)" = "0-based",
+                                        "1-based (IGV, VCF)" = "1-based"),
+                            selected = "0-based"
+                          ),
+                          helpText(em("BED files are typically 0-based (half-open intervals)"))
+                        ),
+
                         hr(),
 
                         shinyWidgets::pickerInput("notation",
@@ -100,15 +137,6 @@ preprocess <- function() {
                                                   options = list(`actions-box` = TRUE),
                                                   multiple =FALSE),
 
-                        shinyWidgets::pickerInput("MAPQ",
-                                                  label = "Minum Mapping Quality (MAPQ)",
-                                                  choices = c(1:1000),
-                                                  options = list(`actions-box` = TRUE), multiple =FALSE),
-
-                        shinyWidgets::pickerInput("base_qual",
-                                                  label = "Minimum Base Quality",
-                                                  choices = c(1:1000),
-                                                  options = list(`actions-box` = TRUE), multiple =FALSE),
 
 
                         # sliderInput("min_coverage",
@@ -143,11 +171,7 @@ preprocess <- function() {
                                              ".bed",
                                              "text/comma-separated-values,text/plain",
                                              ".list")),
-                        helpText("Choose the type of your input file"),
-                        radioButtons("type_coverage", "File format",
-                                     choices = c("BAM file" = "bam",
-                                                 "BED coverage file"= "bed"),
-                                     selected = "bed"),
+
                         hr(),
                         hr(),
                         downloadButton("summary", "Statistical_Summary", class = "btn-primary",
@@ -424,6 +448,8 @@ myabout <- function() {
 
 ui <- shinyUI(
   tagList(
+    shinyjs::useShinyjs(), 
+    waiter::use_waiter(),
     shiny::tags$head(
       shiny::tags$style(HTML("
         .navbar { background-color: #FFFFFF;height: 150px;}
@@ -477,4 +503,3 @@ ui <- shinyUI(
 #    myTab2(),
 #    myabout()
 #  ))
-

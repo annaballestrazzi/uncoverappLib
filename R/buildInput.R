@@ -1,3 +1,7 @@
+utils::globalVariables(c(
+  "ENTREZID", "ALIAS", "SYMBOL", "chr", "count",
+  "seqnames.1", "start.1", "end.1", "width.1", "strand.1", "value"
+))
 #' Build input file for coverage analysis
 #' @importFrom stats median
 #' @importFrom utils download.file head read.csv
@@ -89,10 +93,7 @@
 #' )
 #' }
 
-utils::globalVariables(c(
-  "ENTREZID", "ALIAS", "SYMBOL", "chr", "count",
-  "seqnames.1", "start.1", "end.1", "width.1", "strand.1", "value"
-))
+
 
 buildInput <- function(geneList, 
                        genome, 

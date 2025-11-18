@@ -92,3 +92,20 @@ run.uncoverapp <- function(where = c("browser", "viewer", "window")) {
     uncoverAPP()
   }
 }
+#' @title Alias for run.uncoverapp (backward compatibility)
+#' @description
+#' Alias for \code{run.uncoverapp()} to maintain backward compatibility
+#' with older scripts that use \code{uncoverappLib.run()}.
+#' 
+#' @param where Character. One of \code{"browser"}, \code{"viewer"}, or \code{"window"}.
+#'
+#' @return No value is returned. The function launches the Shiny app.
+#'
+#' @export
+uncoverappLib.run <- function(where) {
+  if (missing(where)) {
+    run.uncoverapp()
+  } else {
+    run.uncoverapp(where = where)
+  }
+}

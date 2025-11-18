@@ -185,7 +185,19 @@ for_bed <- reactive({
    if (nrow(no_entrID()) != 0) return(no_entrID())
    
    if (input$type_file == "target_bed") {
-      return(gene_list())
+      bed_data <- gene_list()
+      cat("Target BED input:", nrow(bed_data), "regions\n")
+      
+      # Filter alternative contigs from target BED
+      cat("Before alt contig filter:", nrow(bed_data), "intervals\n")
+      bed_data <- bed_data %>% dplyr::filter(!grepl("_", chr))
+      cat("After alt contig filter:", nrow(bed_data), "intervals (removed alt contigs)\n")
+      
+      if (nrow(bed_data) == 0) {
+         stop("ERROR: All target regions filtered out (only alt contigs present)!")
+      }
+      
+      return(bed_data)
    }
 
    # USA I DATI GIÀ VALIDATI - zero duplicazione!
@@ -226,7 +238,7 @@ for_bed <- reactive({
          end = end + 10
       )
    
-   # OTTIMIZZAZIONE: elimina il secondo loop, usa operazioni vettoriali
+   # OTTIMIZZAZIONE: rimuovi alt contigs PRIMA di creare il BED
    for_bed <- pre %>%
       dplyr::transmute(
          chr = as.character(seqnames),
@@ -235,6 +247,10 @@ for_bed <- reactive({
          SYMBOL = ALIAS
       ) %>%
       dplyr::distinct()
+    cat("Before alt contig filter:", nrow(for_bed), "intervals\n")
+    for_bed <- for_bed %>%
+      dplyr::filter(!grepl("_", chr))
+    cat("After alt contig filter:", nrow(for_bed), "intervals (removed alt contigs)\n")
    
    # Apply notation transformation
    if (input$notation == "number") {

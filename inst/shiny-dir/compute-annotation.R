@@ -1,4 +1,3 @@
-
 # ============================================================================
 # REACTIVE BASE: Calcolo una sola volta
 # ============================================================================
@@ -12,21 +11,46 @@
 # ============================================================================
 
 intBED <- eventReactive(input$calc_annotations, {
-  cat("\n=== ANNOTATION: intBED (TRIGGERED BY BUTTON) ===\n")
+  cat("\n=== ANNOTATION BUTTON PRESSED ===\n")
+  
+  # ✅ 1. MOSTRA WAITER
+  waiter::waiter_show(
+    html = tagList(
+      waiter::spin_folding_cube(),
+      h3("Querying annotation database...", style = "color: white;"),
+      p("Retrieving variant annotations from Tabix", style = "color: white;"),
+      p("This may take several minutes for large regions", 
+        style = "font-size: 0.9em; opacity: 0.8; color: white;")
+    ),
+    color = "rgba(0, 0, 0, 0.85)"
+  )
+  
+  # ✅ 2. DISABILITA BOTTONE
+  shinyjs::disable("calc_annotations")
+  
+  # ✅ 3. CAMBIA TAB
+  updateTabsetPanel(session, "tabSet", selected = "Annotations on low-coverage positions")
+  
   # ============================================================================
   # VALIDAZIONE INPUT
   # ============================================================================
 
   if (is.null(filtered_low_nucl())) {
     cat("ERROR: No filtered data\n")
+    waiter::waiter_hide()
+    shinyjs::enable("calc_annotations")
+    showNotification("No low coverage data available!", type = "error", duration = 5)
     return(NULL)
   }
 
-  bedA <- filtered_low_nucl()  # ← GIÀ FILTRATO da filtered_low()!
+  bedA <- filtered_low_nucl()
   cat("Low coverage positions to annotate:", nrow(bedA), "\n")
 
   if (nrow(bedA) == 0) {
     cat("ERROR: No positions to annotate\n")
+    waiter::waiter_hide()
+    shinyjs::enable("calc_annotations")
+    showNotification("No positions to annotate!", type = "warning", duration = 5)
     return(NULL)
   }
 
@@ -93,24 +117,37 @@ intBED <- eventReactive(input$calc_annotations, {
     )
   }, error = function(e) {
     cat("ERROR creating GRanges:", e$message, "\n")
+    waiter::waiter_hide()
+    shinyjs::enable("calc_annotations")
+    showNotification(paste("Error creating genomic ranges:", e$message), type = "error", duration = 5)
     return(NULL)
   })
   
-  if (is.null(bedA_gr)) return(NULL)
-  
-  query_gr <- if (length(bedA_gr) > 1000) {
-    cat("Optimizing: merging intervals...\n")
-    reduced <- GenomicRanges::reduce(bedA_gr, min.gapwidth = 100)
-    cat("Reduced from", length(bedA_gr), "to", length(reduced), "\n")
-    reduced
-  } else {
-    bedA_gr
+  if (is.null(bedA_gr)) {
+    waiter::waiter_hide()
+    shinyjs::enable("calc_annotations")
+    showNotification("Failed to create genomic ranges", type = "error", duration = 5)
+    return(NULL)
   }
   
-  result <- try(Rsamtools::scanTabix(file.name, param = query_gr), silent = FALSE)
+  cat("Optimizing query intervals...\n") 
+  query_gr <- GenomicRanges::reduce(bedA_gr, min.gapwidth = 100)
+  cat("Reduced from", length(bedA_gr), "to", length(query_gr), "intervals\n")
+
+  # AGGIUNGI: batch per cromosoma + parallelizzazione
+  query_by_chr <- split(query_gr, seqnames(query_gr))
+
+  result <- parallel::mclapply(query_by_chr, function(chr_gr) {
+    Rsamtools::scanTabix(file.name, param = chr_gr)
+  }, mc.cores = min(4, parallel::detectCores() - 1))
+
+  result <- unlist(result, recursive = FALSE)
   
   if (inherits(result, "try-error")) {
     cat("ERROR in Tabix\n")
+    waiter::waiter_hide()
+    shinyjs::enable("calc_annotations")
+    showNotification("Error querying annotation database", type = "error", duration = 5)
     return(NULL)
   }
   
@@ -119,6 +156,9 @@ intBED <- eventReactive(input$calc_annotations, {
   
   if (sum(lengths_result) == 0) {
     cat("No variants\n")
+    waiter::waiter_hide()
+    shinyjs::enable("calc_annotations")
+    showNotification("No variants found in annotation database", type = "warning", duration = 5)
     return(NULL)
   }
   
@@ -128,7 +168,12 @@ intBED <- eventReactive(input$calc_annotations, {
   })
   
   valid_dfs <- dff[sapply(dff, nrow) > 0]
-  if (length(valid_dfs) == 0) return(NULL)
+  if (length(valid_dfs) == 0) {
+    waiter::waiter_hide()
+    shinyjs::enable("calc_annotations")
+    showNotification("No valid annotation data found", type = "warning", duration = 5)
+    return(NULL)
+  }
   
   bedB <- do.call(rbind, valid_dfs)
   cat("Combined annotation:", nrow(bedB), "variants\n")
@@ -152,30 +197,104 @@ intBED <- eventReactive(input$calc_annotations, {
   bedB$AF_gnomAD <- suppressWarnings(as.numeric(bedB$AF_gnomAD))
   bedB$CADD_PHED <- suppressWarnings(as.numeric(bedB$CADD_PHED))
   
-  # OVERLAP
-  cat("Computing overlap...\n")
-  # Normalize chromosome naming: remove "chr" prefix from both datasets
-  bedA_norm <- bedA %>%
-    dplyr::mutate(chromosome = sub("^chr", "", chromosome))
+  # SOSTITUISCI la sezione OVERLAP (da "# OVERLAP" fino a "intersect_df <- data.frame(...)")
+# con questo codice ottimizzato:
 
-  bedB_norm <- bedB %>%
-    dplyr::mutate(Chromosome = sub("^chr", "", Chromosome))
+# OVERLAP
+cat("Computing overlap...\n")
 
-  cat("bedA chromosomes:", unique(bedA_norm$chromosome), "\n")
-  cat("bedB chromosomes:", unique(bedB_norm$Chromosome), "\n")
+# Normalize chromosome naming
+bedA_norm <- bedA %>%
+  dplyr::mutate(chromosome = sub("^chr", "", chromosome))
+
+bedB_norm <- bedB %>%
+  dplyr::mutate(Chromosome = sub("^chr", "", Chromosome))
+
+cat("bedA chromosomes:", unique(bedA_norm$chromosome), "\n")
+cat("bedB chromosomes:", unique(bedB_norm$Chromosome), "\n")
+
+# OTTIMIZZAZIONE: usa data.table per dataset grandi
+if (nrow(bedA_norm) > 10000 || nrow(bedB_norm) > 10000) {
+  cat("Using data.table::foverlaps for large dataset...\n")
+  
+  # Convert to data.table
+  dt_bedA <- data.table::as.data.table(bedA_norm)
+  dt_bedB <- data.table::as.data.table(bedB_norm)
+  
+  # Rename columns for foverlaps compatibility
+  data.table::setnames(dt_bedA, "chromosome", "chr")
+  data.table::setnames(dt_bedB, "Chromosome", "chr")
+  
+  # Set keys
+  data.table::setkey(dt_bedA, chr, start, end)
+  data.table::setkey(dt_bedB, chr, start, end)
+  
+  # Fast overlap
+  overlaps_dt <- data.table::foverlaps(
+    dt_bedB, dt_bedA,
+    type = "any",
+    nomatch = NULL  # Remove non-overlapping
+  )
+  
+  cat("Overlaps found:", nrow(overlaps_dt), "\n")
+  
+  if (nrow(overlaps_dt) == 0) {
+    waiter::waiter_hide()
+    shinyjs::enable("calc_annotations")
+    showNotification("No overlap found between coverage and annotation data", 
+                     type = "warning", duration = 5)
+    return(data.frame())
+  }
+  
+  # Build result dataframe (foverlaps preserves all columns)
+  intersect_df <- data.frame(
+    seqnames = paste0("chr", overlaps_dt$chr),
+    start = overlaps_dt$i.start,      # from bedB (variants)
+    end = overlaps_dt$i.end,
+    coverage = overlaps_dt$coverage,  # from bedA (low cov)
+    REF = overlaps_dt$REF,
+    ALT = overlaps_dt$ALT,
+    dbsnp = overlaps_dt$dbsnp,
+    GENENAME = overlaps_dt$GENENAME,
+    PROTEIN_ensembl = overlaps_dt$PROTEIN_ensembl,
+    MutationAssessor = overlaps_dt$MutationAssessor,
+    SIFT = overlaps_dt$SIFT,
+    Polyphen2 = overlaps_dt$Polyphen2,
+    M_CAP = overlaps_dt$M_CAP,
+    CADD_PHED = overlaps_dt$CADD_PHED,
+    AF_gnomAD = overlaps_dt$AF_gnomAD,
+    ClinVar = overlaps_dt$ClinVar,
+    clinvar_MedGen_id = overlaps_dt$clinvar_MedGen_id,
+    HGVSc_VEP = overlaps_dt$HGVSc_VEP,
+    HGVSp_VEP = overlaps_dt$HGVSp_VEP,
+    stringsAsFactors = FALSE
+  )
+  
+} else {
+  # METODO ORIGINALE per dataset piccoli
+  cat("Using GenomicRanges::findOverlaps for small dataset...\n")
+  
   bed1_gr <- GenomicRanges::makeGRangesFromDataFrame(
-    bedA_norm, seqnames.field = "chromosome", ignore.strand = TRUE, keep.extra.columns = TRUE
+    bedA_norm, seqnames.field = "chromosome", ignore.strand = TRUE, 
+    keep.extra.columns = TRUE
   )
   
   bed2_gr <- GenomicRanges::makeGRangesFromDataFrame(
-    bedB_norm, seqnames.field = "Chromosome", ignore.strand = TRUE, keep.extra.columns = TRUE
+    bedB_norm, seqnames.field = "Chromosome", ignore.strand = TRUE, 
+    keep.extra.columns = TRUE
   )
   
   tp <- GenomicRanges::findOverlaps(query = bed2_gr, subject = bed1_gr, type = "any")
   
   cat("Overlaps:", length(tp), "\n")
   
-  if (length(tp) == 0) return(data.frame())
+  if (length(tp) == 0) {
+    waiter::waiter_hide()
+    shinyjs::enable("calc_annotations")
+    showNotification("No overlap found between coverage and annotation data", 
+                     type = "warning", duration = 5)
+    return(data.frame())
+  }
   
   hits_bed2_idx <- S4Vectors::queryHits(tp)
   hits_bed1_idx <- S4Vectors::subjectHits(tp)
@@ -205,23 +324,30 @@ intBED <- eventReactive(input$calc_annotations, {
     HGVSp_VEP = bed2_hits$HGVSp_VEP,
     stringsAsFactors = FALSE
   )
-  # Filter by gene name if user searched for specific gene
-  if (input$filter_by == "gene" && !is.null(input$Gene_name) && input$Gene_name != "") {
-    cat("Filtering variants by GENENAME:", input$Gene_name, "\n")
+}
+
+# (Il resto del codice - filter by gene, waiter_hide, etc. - rimane uguale)
+
+
   
-    before_filter <- nrow(intersect_df)
+  # ✅ 5. FINE: NASCONDI WAITER E NOTIFICA
+  waiter::waiter_hide()
+  shinyjs::enable("calc_annotations")
   
-    intersect_df <- intersect_df %>%
-      dplyr::filter(GENENAME == input$Gene_name)
-  
-    after_filter <- nrow(intersect_df)
-  
-    cat("Variants before gene filter:", before_filter, "\n")
-    cat("Variants after gene filter:", after_filter, "\n")
-    if (before_filter > after_filter) {
-      cat("Filtered out:", before_filter - after_filter, "variants from other genes\n")
-    }
+  if (!is.null(intersect_df) && nrow(intersect_df) > 0) {
+    showNotification(
+      paste("✓ Annotation complete:", nrow(intersect_df), "variants annotated"),
+      type = "message",
+      duration = 5
+    )
+  } else {
+    showNotification(
+      "⚠ No variants found in annotation database",
+      type = "warning",
+      duration = 5
+    )
   }
+  
   cat("Final result:", nrow(intersect_df), "variants\n")
   return(intersect_df)
 }, ignoreNULL = TRUE, ignoreInit = TRUE)

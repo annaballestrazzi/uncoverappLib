@@ -9,6 +9,7 @@ server <- function (input, output, session){
     require(EnsDb.Hsapiens.v86)
     require(DT)
     require(shinycssloaders)
+    require(waiter) 
   })
 
   options(shiny.maxRequestSize=30*1024^2)
@@ -41,6 +42,24 @@ server <- function (input, output, session){
   source('compute-maxAF.R', local=TRUE)            # data(), uncover_maxaf_data(), uncover_maxaf()
   source('compute-binomial.R', local=TRUE)
 
+
+
+
+  # ============================================================================
+  # OUTPUT: low_coverage_ready (for annotation button visibility)
+  # ============================================================================
+  output$low_coverage_ready <- reactive({
+    result <- !is.null(filtered_low_nucl()) && nrow(filtered_low_nucl()) > 0
+    
+    # Debug (opzionale - rimuovi dopo test)
+    cat("Low coverage ready:", result, "\n")
+    if (!is.null(filtered_low_nucl())) {
+      cat("  Rows:", nrow(filtered_low_nucl()), "\n")
+    }
+    
+    return(result)
+  })
+  outputOptions(output, "low_coverage_ready", suspendWhenHidden = FALSE)
   # ============================================================================
   # OUTPUT: annotation_ready (for download button visibility)
   # ============================================================================
