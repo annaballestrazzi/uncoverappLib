@@ -57,7 +57,7 @@ getAnnotationFiles <- function(assembly = c("hg19", "hg38"), verbose = FALSE) {
     if (verbose) cat("Downloading:", filename, "\n")
     
     tryCatch({
-      download.file(url, local_path, mode = "wb", quiet = !verbose, timeout = 3600)
+      download.file(url, local_path, mode = "wb", quiet = !verbose, timeout = 10000000)
       if (verbose) cat("Downloaded to:", local_path, "\n")
       return(local_path)
     }, error = function(e) {
