@@ -6,6 +6,19 @@
 \usage{
 setup_uncoverapp()
 }
+\value{
+Invisibly returns a list of downloaded file paths.
+}
 \description{
-Setup UncoverApp (download annotation files)
+Downloads and caches annotation files for hg19 and hg38.
+}
+\examples{
+# Show function signature
+args(setup_uncoverapp)
+
+\donttest{
+# Download annotation files (one-time setup)
+setup_uncoverapp()
+}
+
 }

@@ -8,8 +8,6 @@ suppressPackageStartupMessages({
     })
     cat("Heavy packages loaded!\n")
 
-
-
 ff <- reactiveValues()
 
 gene_list <- reactive({
@@ -47,7 +45,6 @@ all_gene <- reactive({
 # NUOVO REACTIVE CENTRALIZZATO: calcola UNA SOLA VOLTA la validazione dei geni
 # ============================================================================
 validated_genes_data <- reactive({
-   start_time <- Sys.time()
    cat("\n=== RUNNING ON R SESSION:", Sys.info()["nodename"], "===\n")
    cat("R Process ID:", Sys.getpid(), "\n")
    cat("Working directory:", getwd(), "\n\n")
@@ -130,8 +127,6 @@ validated_genes_data <- reactive({
                 length(invalid_genes_stage2), " stage 2)\n", sep=""))
    }
    cat("=== VALIDATION COMPLETE ===\n\n")
-   cat(paste("Gene validation took:", round(difftime(Sys.time(), start_time, units="mins"), 2), "minutes\n\n"))
-   # RETURN: tutto quello che serve ai reactive successivi
    list(
       my_gene_name = my_gene_name,
       valid_entrez_ids = valid_entrez_ids,
@@ -179,7 +174,6 @@ no_entrID <- reactive({
 # ============================================================================
 
 for_bed <- reactive({
-   start_time <- Sys.time()
    if (is.null(gene_list())) return(NULL)
    if (is.null(list_coverage())) return(NULL)
    if (nrow(no_entrID()) != 0) return(no_entrID())
@@ -257,9 +251,6 @@ for_bed <- reactive({
       for_bed <- for_bed %>%
          dplyr::mutate(chr = sub("^.{0,3}", "", chr, perl = TRUE))
    }
-   cat(paste("BED creation took:", round(difftime(Sys.time(), start_time, units="mins"), 2), "minutes\n\n"))
-
-   
    return(for_bed)
 })
 
@@ -268,13 +259,27 @@ for_bed <- reactive({
 # Handles both 0-based and 1-based coordinate systems
 # Coverage BED format: chr start end depth (uniform depth per interval)
 # ============================================================================
-
-coverage_input <- reactive({
-    if (is.null(gene_list())) return(NULL)
-    if (!is.null(no_entrID()) && nrow(no_entrID()) != 0) return(no_entrID())
-    if (is.null(list_coverage())) return(NULL)
+coverage_input <- eventReactive(input$process_coverage, {
+    cat("\n=== PROCESS COVERAGE BUTTON PRESSED ===\n")
     
-    coverage_time <- Sys.time()
+    # Validazione iniziale
+    if (is.null(gene_list())) {
+        showNotification("Please upload a gene list file first!", 
+                        type = "warning", duration = 5)
+        return(NULL)
+    }
+    
+    if (!is.null(no_entrID()) && nrow(no_entrID()) != 0) {
+        return(no_entrID())
+    }
+    
+    if (is.null(list_coverage())) {
+        showNotification("Please upload a BAM/BED list file first!", 
+                        type = "warning", duration = 5)
+        return(NULL)
+    }
+
+    
     cat("\n=== COVERAGE PROCESSING ===\n")
     
     # Determine input coordinate system (add this as UI input!)
@@ -294,7 +299,7 @@ coverage_input <- reactive({
         keep.extra.columns = TRUE
     )
     if (input$type_coverage == "bam") {
-    cat("Processing BAM files with pileup...\n\n")
+            cat("Processing BAM files with pileup...\n\n")
     
             idx_stats <- system(paste("samtools idxstats", list_coverage()[1]), intern = TRUE)
             idx_df <- read.table(text = idx_stats, header = FALSE, 
@@ -354,7 +359,6 @@ coverage_input <- reactive({
         pp <- as.data.frame(pp_gr_matched) %>%
             dplyr::select(-width, -strand) %>%
             dplyr::distinct()
-
         cat("Added SYMBOL to", nrow(pp), "positions\n")
         cat("BAM pileup: per-base coverage (1-based positions)\n\n")
 
@@ -473,9 +477,7 @@ coverage_input <- reactive({
     pp$seqnames <- paste0("chr", sub("^chr", "", as.character(pp$seqnames)))
     
     cat(paste("\nFinal coverage dimensions:", nrow(pp), "intervals x", ncol(pp)-4, "samples\n"))
-    cat(paste("Coverage processing took:", 
-              round(difftime(Sys.time(), coverage_time, units = "mins"), 2), 
-              "minutes\n"))
+   
     # Verify SYMBOL column
     if (!"SYMBOL" %in% colnames(pp)) {
         stop("ERROR: Coverage missing SYMBOL column!")
@@ -495,7 +497,6 @@ coverage_input <- reactive({
     attr(pp, "coordinate_system") <- "1-based"
     attr(pp, "trimmed_to_targets") <- TRUE
     attr(pp, "original_input_system") <- input_coord_system
-    
     return(pp)
 })
 

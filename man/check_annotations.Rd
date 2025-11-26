@@ -2,10 +2,18 @@
 % Please edit documentation in R/setup.R
 \name{check_annotations}
 \alias{check_annotations}
-\title{Check annotation files}
+\title{Check Annotation Files}
 \usage{
 check_annotations()
 }
+\value{
+Invisibly returns a character vector of annotation file paths.
+}
 \description{
-Check annotation files
+Verifies that annotation files are available for both hg19 and hg38.
+}
+\examples{
+# Check if annotation files are available
+check_annotations()
+
 }

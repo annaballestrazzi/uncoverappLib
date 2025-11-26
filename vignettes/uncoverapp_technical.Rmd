@@ -1,0 +1,473 @@
+---
+title: "Technical Guide: Understanding uncoverappLib Architecture"
+author: "Emanuela Iovino, Tommaso Pippucci, Anna Ballestrazzi"
+date: "`r Sys.Date()`"
+output: 
+  BiocStyle::html_document:
+    toc: true
+    toc_depth: 3
+vignette: >
+  %\VignetteIndexEntry{Technical Guide: Understanding uncoverappLib Architecture}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  eval = FALSE
+)
+```
+
+# Architecture Overview
+
+This vignette provides technical details about uncoverappLib's internal architecture, useful for developers and advanced users who want to understand or extend the package.
+
+## Module Structure
+
+uncoverappLib is organized into modular components:
+
+```
+uncoverappLib/
+├── R/
+│   ├── buildInput.R           # Input processing from BAM/BED
+│   ├── buildAnnotation.R      # Annotation database queries
+│   ├── run_uncoverapp.R       # App launcher
+│   └── setup.R                # Annotation file management
+│
+├── inst/
+│   ├── server/
+│   │   ├── server.R           # Main Shiny server
+│   │   ├── compute-preprocess.R    # Data preprocessing
+│   │   ├── compute-reactiveDF.R    # Reactive data filtering
+│   │   ├── compute-annotation.R    # Annotation pipeline
+│   │   ├── compute-tables.R        # Table generation
+│   │   ├── compute-plots.R         # Gviz plot generation
+│   │   ├── compute-maxAF.R         # MaxAF calculator
+│   │   └── compute-binomial.R      # Binomial statistics
+│   │
+│   ├── ui.R                   # Shiny UI definition
+│   └── www/                   # Static assets (logo, CSS, JS)
+│
+└── inst/extdata/              # Example data and documentation
+```
+
+## Data Processing Pipeline
+
+### 1. Input Processing (buildInput.R)
+
+Converts BAM or BED files into unified coverage format:
+
+```{r}
+# Pseudocode
+coverage_input <- function(bam_files, genes, genome) {
+  
+  # Step 1: Get gene coordinates
+  gene_ranges <- genes_to_genomic_ranges(genes, genome)
+  
+  # Step 2: Extract coverage
+  if (input_type == "bam") {
+    coverage <- pileup_bam_regions(bam_files, gene_ranges)
+  } else {
+    coverage <- intersect_bed_regions(bed_files, gene_ranges)
+  }
+  
+  # Step 3: Normalize coordinates (always 1-based internally)
+  coverage <- normalize_coordinates(coverage, input_system)
+  
+  # Step 4: Merge samples
+  merged <- merge_sample_coverage(coverage)
+  
+  return(merged)
+}
+```
+
+**Key Functions**:
+- `buildInput()`: Main entry point
+- `pileup_bam()`: BAM file processing with Rsamtools
+- `intersect_bed()`: BED file intersection with GenomicRanges
+
+### 2. Coverage Filtering (compute-reactiveDF.R)
+
+Reactive filtering based on user parameters:
+
+```{r}
+# Event-driven computation
+filtered_low <- eventReactive(input$calc_low_coverage, {
+  
+  # Get base data
+  data <- coverage_input()
+  
+  # Apply threshold filter
+  low_cov <- data[data$coverage <= threshold, ]
+  
+  # Apply genomic filter
+  if (filter_mode == "gene") {
+    low_cov <- filter_by_gene(low_cov, gene_name)
+  } else if (filter_mode == "chromosome") {
+    low_cov <- filter_by_chromosome(low_cov, chr)
+  } else if (filter_mode == "region") {
+    low_cov <- filter_by_coordinates(low_cov, chr, start, end)
+  }
+  
+  return(low_cov)
+})
+```
+
+**Design Pattern**: Event-reactive for performance
+- Only recalculates when button is pressed
+- Uses `isolate()` to prevent unwanted reactivity
+- Implements waiter/waitress for user feedback
+
+### 3. Annotation (compute-annotation.R)
+
+Queries dbNSFP database using Tabix:
+
+```{r}
+# Annotation pipeline
+annotate_positions <- function(positions, genome) {
+  
+  # Step 1: Get annotation file
+  dbNSFP_file <- get_annotation_file(genome)
+  
+  # Step 2: Create Tabix queries
+  queries <- create_tabix_queries(positions)
+  
+  # Step 3: Query in parallel (chunked)
+  annotations <- parallel_tabix_query(
+    file = dbNSFP_file,
+    queries = queries,
+    chunk_size = 1000
+  )
+  
+  # Step 4: Parse and merge
+  parsed <- parse_dbNSFP_fields(annotations)
+  result <- merge(positions, parsed, by = c("chr", "pos"))
+  
+  return(result)
+}
+```
+
+**Performance Optimizations**:
+- Chunked queries (1000 positions per batch)
+- Parallel processing where possible
+- Tabix indexing for fast random access
+
+### 4. Visualization (compute-plots.R)
+
+Gviz-based gene coverage plots:
+
+```{r}
+# Plot generation
+create_gene_plot <- function(gene, coverage_data, genome) {
+  
+  # Track 1: Ideogram
+  itrack <- IdeogramTrack(genome = genome, chromosome = chr)
+  
+  # Track 2: Genome axis
+  gtrack <- GenomeAxisTrack()
+  
+  # Track 3: Gene annotations
+  grtrack <- GeneRegionTrack(
+    txdb = get_txdb(genome),
+    chromosome = chr,
+    start = gene_start,
+    end = gene_end,
+    transcriptAnnotation = "symbol"
+  )
+  
+  # Track 4: Coverage (low + high overlay)
+  dtrack_low <- DataTrack(
+    range = low_coverage_gr,
+    type = "histogram",
+    fill = "red"
+  )
+  
+  dtrack_high <- DataTrack(
+    range = high_coverage_gr,
+    type = "histogram",
+    fill = "dodgerblue"
+  )
+  
+  overlay <- OverlayTrack(trackList = list(dtrack_low, dtrack_high))
+  
+  # Plot all tracks
+  plotTracks(
+    list(itrack, gtrack, overlay, grtrack),
+    chromosome = chr,
+    from = gene_start,
+    to = gene_end
+  )
+}
+```
+
+## Shiny Architecture
+
+### Reactive Programming Model
+
+```{r}
+# Data flow
+#User Input → Reactive Values → Reactive Expressions → Outputs
+#    ↓              ↓                    ↓                ↓
+# Buttons    data_source()         filtered_low()    renderPlot()
+# Sliders    mydata()              annotated()       renderTable()
+# Text       gene_coords()         summary_stats()   downloadHandler()
+```
+
+### Event-Driven Updates
+
+Key reactive functions use `eventReactive` to prevent unnecessary recalculation:
+
+```{r}
+# Only updates when button is clicked
+filtered_low <- eventReactive(input$calc_low_coverage, {
+  # Heavy computation here
+  # Won't run until button is pressed
+})
+
+# NOT reactive to every input change
+# Uses isolate() to read inputs without creating dependencies
+sample_name <- isolate(input$Sample)
+```
+
+### Performance Patterns
+
+**Waiter/Waitress Integration**:
+```{r}
+# Show loading screen
+show_uncoverapp_waiter("Processing...")
+
+# Disable button to prevent double-clicks
+shinyjs::disable("calc_button")
+
+# Perform computation
+result <- heavy_computation()
+
+# Hide loading and re-enable
+waiter::waiter_hide()
+shinyjs::enable("calc_button")
+```
+
+## Database Schema
+
+### Annotation Files (dbNSFP v4.0)
+
+Tabix-indexed BED format:
+```
+chr  pos  ref  alt  <100+ annotation columns>
+```
+
+**Key Columns**:
+- `CADD_phred`: CADD score
+- `gnomAD_*`: Population frequencies
+- `SIFT_pred`: SIFT prediction
+- `Polyphen2_*`: PolypPhen2 scores
+- `M-CAP_pred`: M-CAP prediction
+- `ClinVar_clnsig`: ClinVar classification
+- `Ensembl_geneid`: Gene identifiers
+
+### Coverage Data Structure
+
+Internal representation (data.frame):
+```
+seqnames  start  end  sample_1  sample_2  ...  sample_N  SYMBOL
+chr1      1000   1001    25        30                28    GENE1
+chr1      1001   1002    30        35                32    GENE1
+```
+
+**Coordinate System**: 
+- Internal: Always 1-based (inclusive)
+- Input: Can be 0-based (BED) or 1-based (VCF/BAM)
+- Conversion: Automatic in preprocessing
+
+## Extending uncoverappLib
+
+### Adding New Annotations
+
+To integrate additional annotation sources:
+
+```{r}
+# 1. Create Tabix-indexed file
+system("bgzip annotation.bed")
+system("tabix -p bed annotation.bed.gz")
+
+# 2. Add query function
+query_custom_annotation <- function(positions, anno_file) {
+  # Use Rsamtools::TabixFile
+  tf <- TabixFile(anno_file)
+  
+  # Create GRanges
+  gr <- GRanges(
+    seqnames = positions$chr,
+    ranges = IRanges(start = positions$start, end = positions$end)
+  )
+  
+  # Query
+  result <- scanTabix(tf, param = gr)
+  
+  # Parse and return
+  parsed <- parse_annotation_result(result)
+  return(parsed)
+}
+
+# 3. Integrate in compute-annotation.R
+# Add to annotated_variants_data() reactive
+```
+
+### Adding New Plots
+
+To create custom visualization modules:
+
+```{r}
+# 1. Create reactive data source
+custom_plot_data <- reactive({
+  # Process coverage data for custom visualization
+  data <- filtered_low()
+  processed <- custom_processing(data)
+  return(processed)
+})
+
+# 2. Create plot output
+output$custom_plot <- renderPlot({
+  data <- custom_plot_data()
+  
+  # Use ggplot2, plotly, or base R
+  ggplot(data, aes(x = position, y = coverage)) +
+    geom_line() +
+    theme_minimal()
+})
+
+# 3. Add to UI
+# In ui.R, add new tab with plotOutput("custom_plot")
+```
+
+### Adding Statistical Tests
+
+Example: Fisher's exact test for coverage comparison:
+
+```{r}
+# New module: compute-fisher.R
+fisher_coverage_test <- reactive({
+  
+  sample1 <- get_sample_data(mydata(), input$sample1)
+  sample2 <- get_sample_data(mydata(), input$sample2)
+  
+  # Create contingency table
+  table <- matrix(c(
+    sum(sample1$coverage < threshold),
+    sum(sample1$coverage >= threshold),
+    sum(sample2$coverage < threshold),
+    sum(sample2$coverage >= threshold)
+  ), nrow = 2)
+  
+  # Run test
+  test_result <- fisher.test(table)
+  
+  return(test_result)
+})
+```
+
+## Testing
+
+### Unit Tests (testthat)
+
+```{r}
+# tests/testthat/test-buildInput.R
+test_that("BAM pileup produces correct output", {
+  # Setup test data
+  test_bam <- system.file("extdata", "example.bam", package = "uncoverappLib")
+  test_genes <- c("POLG")
+  
+  # Run function
+  result <- buildInput(
+    gene_list = test_genes,
+    bam_list = test_bam,
+    genome = "hg19"
+  )
+  
+  # Assertions
+  expect_s3_class(result, "data.frame")
+  expect_true("SYMBOL" %in% colnames(result))
+  expect_true(all(result$SYMBOL %in% test_genes))
+})
+```
+
+### Integration Tests
+
+```{r}
+# Test full pipeline
+test_that("Complete analysis workflow", {
+  
+  # 1. Build input
+  coverage <- buildInput(...)
+  
+  # 2. Filter
+  low_cov <- coverage[coverage$sample_1 < 20, ]
+  
+  # 3. Annotate
+  annotated <- annotate_all_lowcov(low_cov, ...)
+  
+  # 4. Check output
+  expect_true(nrow(annotated) > 0)
+  expect_true("CADD_phred" %in% colnames(annotated))
+})
+```
+
+## Performance Considerations
+
+### Memory Management
+
+**Large Files**:
+```{r}
+# Process in chunks
+chunk_size <- 10000
+
+for (i in seq(1, nrow(data), by = chunk_size)) {
+  chunk <- data[i:min(i + chunk_size - 1, nrow(data)), ]
+  process_chunk(chunk)
+  gc()  # Force garbage collection
+}
+```
+
+**Data.table for Speed**:
+```{r}
+# Convert to data.table for faster operations
+library(data.table)
+dt <- as.data.table(coverage_data)
+
+# Fast filtering
+low_cov <- dt[coverage < 20, ]
+
+# Fast aggregation
+stats <- dt[, .(
+  mean_cov = mean(coverage),
+  median_cov = median(coverage)
+), by = SYMBOL]
+```
+
+### Parallel Processing
+
+```{r}
+# Use parallel for independent operations
+library(parallel)
+
+ncores <- detectCores() - 1
+cl <- makeCluster(ncores)
+
+# Export functions and data to cluster
+clusterExport(cl, c("coverage_data", "process_sample"))
+
+# Process in parallel
+results <- parLapply(cl, sample_list, function(sample) {
+  process_sample(coverage_data, sample)
+})
+
+stopCluster(cl)
+```
+
+## Session Info
+
+```{r}
+sessionInfo()
+```

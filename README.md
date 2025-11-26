@@ -150,7 +150,7 @@ run.uncoverapp(where = "viewer")   # RStudio viewer pane
 #### Workflow
 
 ```
-Input Files → buildInput() → Coverage BED → annotate_all_lowcov() → Annotated Variants
+Input Files → buildInput() → Coverage BED → buildAnnotation() → Annotated Variants
 ```
 
 #### Step 1: Generate Coverage Data
@@ -220,7 +220,7 @@ Identify variants at positions with low coverage:
 
 ```r
 # Annotate positions below threshold
-annotate_all_lowcov(
+buildAnnotation(
   sample_data = "results/output/Mon_Nov_11_2024.bed",
   target_sample = "patient1",          # Column name in BED file
   coverage_threshold = 20,              # Coverage cutoff
@@ -256,7 +256,7 @@ samples <- c("patient1", "patient2", "patient3")
 for (sample in samples) {
   cat("Processing:", sample, "\n")
   
-  annotate_all_lowcov(
+  buildAnnotation(
     sample_data = coverage_file,
     target_sample = sample,
     coverage_threshold = 20,
@@ -394,7 +394,7 @@ buildInput(
 coverage_file <- list.files("cardio_results/output", pattern = "\\.bed$", full.names = TRUE)[1]
 
 for (patient in c("count_patient_001", "count_patient_002", "count_patient_003")) {
-  annotate_all_lowcov(
+  buildAnnotation(
     sample_data = coverage_file,
     target_sample = patient,
     coverage_threshold = 30,
@@ -491,7 +491,7 @@ bioRxiv. doi: 10.1101/2020.02.10.939769
 ## Documentation
 
 - **Vignettes**: `browseVignettes("uncoverappLib")`
-- **Function help**: `?buildInput`, `?annotate_all_lowcov`
+- **Function help**: `?buildInput`, `?buildAnnotation`
 - **GitHub Issues**: [Report bugs](https://github.com/annaballestrazzi/uncoverappLib/issues)
 
 ---

@@ -1,3 +1,27 @@
+---
+
+## 🚀 Quick Reference
+
+**Most Common Use Cases:**
+
+1. **First-time processing from BAM:**
+```r
+   buildInput(geneList = "genes.txt", sampleList = "bams.list", 
+              type_coverage = "bam", MAPQ.min = 20, base.quality = 20)
+```
+
+2. **Fast processing with pre-computed coverage:**
+```r
+   buildInput(geneList = "genes.txt", sampleList = "coverage.list", 
+              type_coverage = "bed", input_coord_system = "0-based")
+```
+
+3. **Using target BED regions:**
+```r
+   buildInput(geneList = "targets.bed", type_input = "target", ...)
+```
+
+---
 ## Output Format
 
 The resulting uncoverappLib input file is a **tab-separated BED file** containing:
@@ -473,5 +497,5 @@ buildInput(
 
 - **Interactive Analysis:** See vignette `vignette("interactive-mode")`
 - **Batch Processing:** See vignette `vignette("batch-processing")`
-- **API Reference:** `?buildInput`, `?annotate_all_lowcov`
+- **API Reference:** `?buildInput`, `?buildAnnotation`
 - **GitHub Issues:** Report bugs at [github.com/annaballestrazzi/uncoverappLib/issues](https://github.com/annaballestrazzi/uncoverappLib/issues)

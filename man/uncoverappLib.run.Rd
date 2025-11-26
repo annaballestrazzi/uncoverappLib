@@ -16,3 +16,16 @@ No value is returned. The function launches the Shiny app.
 Alias for \code{run.uncoverapp()} to maintain backward compatibility
 with older scripts that use \code{uncoverappLib.run()}.
 }
+\examples{
+# Show function signature
+args(uncoverappLib.run)
+
+\donttest{
+# Launch app in browser
+uncoverappLib.run()
+
+# Launch in RStudio viewer
+uncoverappLib.run(where = "viewer")
+}
+
+}

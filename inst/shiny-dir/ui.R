@@ -174,11 +174,23 @@ preprocess <- function() {
 
                         hr(),
                         hr(),
-                        downloadButton("summary", "Statistical_Summary", class = "btn-primary",
-                                       style='color: #fff; background-color: #27ae60;
-                                       border-color: #fff;
-                                       padding: 15px 14px 15px 14px;
-                                       margin: 15px 5px 5px 5px; ')
+                        actionButton("process_coverage", 
+                                     "Process Coverage Files",
+                                     icon = icon("play-circle"),
+                                     style = "color: #fff; background-color: #3498db; 
+                                              border-color: #2980b9; width: 100%; 
+                                              margin-bottom: 10px; font-weight: bold;"),
+                        
+                        helpText(em("Click to generate the input table from your files")),
+                        
+                        hr(),
+                        downloadButton("summary", "Download Statistical Summary", class = "btn-primary",
+                                        style='color: #fff !important; background-color: #27ae60;
+                                        border-color: #fff;
+                                        padding: 15px 14px 15px 14px;
+                                        margin: 15px 5px 5px 5px;
+                                        font-size: 14px !important;
+                                        font-weight: bold !important;')
                       ),
                       shiny::mainPanel(
                         tabsetPanel(
@@ -192,9 +204,15 @@ preprocess <- function() {
 
 myHome <- function() {
   tabPanel("Coverage Analysis",
-           h1(strong("Interactive web-application to visualize and annotate low-coverage positions in clinical sequencing")),
-           helpText(em("Note: Select input options",
-                       span("Upload your input bed file with columns: chromosome, start, end, coverage by sample", style = "color:blue"))),
+           h1(strong("Coverage Analysis")),
+           #Interactive web-application to visualize and annotate low-coverage positions in clinical sequencing
+           helpText(
+                    em("Note: Select input options"),
+                    br(),
+                    ("Upload your input bed file with columns: "),
+                    br(),
+                    ("chromosome, start, end, coverage by sample")
+                       ),
            shinyjs::useShinyjs(),
            includeScript(second.file),
            
@@ -281,20 +299,15 @@ myHome <- function() {
              shinyjs::hidden(p(id = "text1", "Running.....")),
              hr(),
              
-             # ═══════════════════════════════════════════════════════════
-             # GENOMIC POSITION (for zooming plots)
-             # ═══════════════════════════════════════════════════════════
-             h4(strong("Genomic Position (for plots)")),
-             textInput(inputId = "Start_genomicPosition", label = "START genomic position"),
-             textInput(inputId = "end_genomicPosition", label = "END genomic position"),
-             helpText(em("Change genomic interval for zooming")),
-             hr(),
-             
              # Download button (visible only after annotation calculation)
              conditionalPanel(
                condition = "output.annotation_ready == true",
                downloadButton("downloadData", "Download Annotations", class = "btn-primary",
-                              style = 'padding:4px; font-size:120%; width: 100%;')
+               style = 'padding: 8px !important; 
+                        font-size: 14px !important; 
+                        width: 100%;
+                        color: #fff !important;
+                        font-weight: bold !important;')
              ),
              hr(),
              
@@ -323,6 +336,9 @@ myHome <- function() {
                tabPanel("bed file", shinycssloaders::withSpinner(DT::DTOutput("text"))),
                tabPanel("Low-coverage positions", DT::DTOutput("text_cv")),
                tabPanel("UCSC gene", shinycssloaders::withSpinner(DT::DTOutput('ccg'))),
+               tabPanel("Gene coverage",
+                        shinycssloaders::withSpinner(plotOutput("all_gene")),
+                        DT::DTOutput('df.l')),
                tabPanel("Annotations on low-coverage positions",
                         helpText(em("dbSNP-annotation collects all consequences found in VEP-defined canonical transcripts")),
                         shinycssloaders::withSpinner(DT::DTOutput("uncover_position"))),
@@ -451,15 +467,401 @@ ui <- shinyUI(
     shinyjs::useShinyjs(), 
     waiter::use_waiter(),
     shiny::tags$head(
+      # Import font Inter (usato da Notion)
+      shiny::tags$link(
+        rel = "stylesheet",
+        href = "https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap"
+      ),
+      
       shiny::tags$style(HTML("
-        .navbar { background-color: #FFFFFF;height: 150px;}
-        .navbar-brand img { height: 150px;margin: 0px; }
-        .navbar-nav > li > a { color: #333; font-weight: bold; font-size: 15px; margin-top: 60px }
-        .navbar-nav > li > a:hover { color: #007BFF; }
-        .navbar-brand { padding: 0px 10px; }
+        /* ============================================ */
+        /* RESET BASE - Applica Inter a TUTTO */
+        /* ============================================ */
+        * {
+          font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif !important;
+        }
+        
+        body, .container-fluid, .well, .tab-content, 
+        .tab-pane, .markdown-body, p, div, span, li, td, th {
+          font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif !important;
+          font-size: 15px !important;
+          line-height: 1.6 !important;
+          color: #37352F !important;
+          -webkit-font-smoothing: antialiased !important;
+          -moz-osx-font-smoothing: grayscale !important;
+        }
+        
+        /* ============================================ */
+        /* TITOLI - Gerarchia chiara e distinta */
+        /* ============================================ */
+        
+        h1 {
+          font-size: 36px !important;
+          font-weight: 800 !important;
+          line-height: 1.2 !important;
+          color: #111111 !important;
+          margin-top: 40px !important;
+          margin-bottom: 24px !important;
+          padding-bottom: 16px !important;
+          border-bottom: 2px solid #E0E0E0 !important;
+          letter-spacing: -0.5px !important;
+        }
+        
+        h2 {
+          font-size: 28px !important;
+          font-weight: 700 !important;
+          line-height: 1.3 !important;
+          color: #1a1a1a !important;
+          margin-top: 48px !important;
+          margin-bottom: 20px !important;
+          padding-left: 0px !important;
+          letter-spacing: -0.3px !important;
+        }
+        
+        h3 {
+          font-size: 20px !important;
+          font-weight: 600 !important;
+          line-height: 1.4 !important;
+          color: #3498DB !important;
+          margin-top: 32px !important;
+          margin-bottom: 16px !important;
+          letter-spacing: -0.2px !important;
+        }
+        
+        h4 {
+          font-size: 17px !important;
+          font-weight: 600 !important;
+          line-height: 1.4 !important;
+          color: #555555 !important;
+          margin-top: 24px !important;
+          margin-bottom: 12px !important;
+        }
+        
+        h5, h6 {
+          font-size: 15px !important;
+          font-weight: 600 !important;
+          color: #666666 !important;
+          margin-top: 16px !important;
+          margin-bottom: 8px !important;
+        }
+        
+        /* ============================================ */
+        /* PARAGRAFI E TESTO */
+        /* ============================================ */
+        p {
+          font-size: 15px !important;
+          line-height: 1.7 !important;
+          color: #37352F !important;
+          margin-bottom: 16px !important;
+        }
+        
+        ul, ol {
+          font-size: 15px !important;
+          line-height: 1.7 !important;
+          color: #37352F !important;
+          padding-left: 24px !important;
+          margin-bottom: 16px !important;
+        }
+        
+        li {
+          margin-bottom: 8px !important;
+        }
+        
+        /* ============================================ */
+        /* CODE BLOCKS - Stile Notion */
+        /* ============================================ */
+        
+        code {
+          font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Courier New', monospace !important;
+          font-size: 14px !important;
+          background-color: rgba(135, 131, 120, 0.15) !important;
+          color: #EB5757 !important;
+          padding: 3px 6px !important;
+          border-radius: 4px !important;
+          font-weight: 500 !important;
+        }
+        
+        pre {
+          font-family: 'SF Mono', 'Monaco', 'Inconsolata', monospace !important;
+          font-size: 13px !important;
+          line-height: 1.5 !important;
+          background-color: #F7F6F3 !important;
+          color: #2C3E50 !important;
+          padding: 16px !important;
+          border-radius: 8px !important;
+          border-left: 4px solid #3498DB !important;
+          overflow-x: auto !important;
+          margin-bottom: 20px !important;
+        }
+        
+        pre code {
+          background-color: transparent !important;
+          color: #2C3E50 !important;
+          padding: 0 !important;
+          font-size: 13px !important;
+        }
+        
+        /* ============================================ */
+        /* LINKS - Stile Notion */
+        /* ============================================ */
+        a {
+          color: #3498DB !important;
+          text-decoration: none !important;
+          border-bottom: 1px solid transparent !important;
+          transition: all 0.2s ease !important;
+          font-weight: 500 !important;
+        }
+        
+        a:hover {
+          border-bottom: 1px solid #3498DB !important;
+          color: #2980B9 !important;
+        }
+        
+        /* ============================================ */
+        /* TABLES - Pulite e moderne */
+        /* ============================================ */
+        table {
+          width: 100% !important;
+          border-collapse: collapse !important;
+          margin: 24px 0 !important;
+          font-size: 14px !important;
+          border-radius: 8px !important;
+          overflow: hidden !important;
+          box-shadow: 0 1px 3px rgba(0,0,0,0.1) !important;
+        }
+        
+        th {
+          background-color: #F7F6F3 !important;
+          color: #37352F !important;
+          font-weight: 600 !important;
+          padding: 12px 16px !important;
+          text-align: left !important;
+          border-bottom: 2px solid #E0E0E0 !important;
+        }
+        
+        td {
+          padding: 12px 16px !important;
+          border-bottom: 1px solid #F0F0F0 !important;
+          color: #37352F !important;
+        }
+        
+        tr:hover {
+          background-color: #FAFAFA !important;
+        }
+        
+        /* ============================================ */
+        /* BLOCKQUOTES - Callout stile Notion */
+        /* ============================================ */
+        blockquote {
+          border-left: 4px solid #3498DB !important;
+          background-color: #F8F9FA !important;
+          padding: 16px 20px !important;
+          margin: 20px 0 !important;
+          border-radius: 4px !important;
+          font-size: 15px !important;
+          color: #37352F !important;
+        }
+        
+        blockquote p {
+          margin: 0 !important;
+        }
+        
+        /* ============================================ */
+        /* STRONG/BOLD - Più visibile */
+        /* ============================================ */
+        strong, b {
+          font-weight: 700 !important;
+          color: #111111 !important;
+        }
+        
+        /* ============================================ */
+        /* EM/ITALIC */
+        /* ============================================ */
+        em, i {
+          font-style: italic !important;
+          color: #555555 !important;
+        }
+        
+        /* ============================================ */
+        /* HR - Separatori */
+        /* ============================================ */
+        hr {
+          border: none !important;
+          border-top: 1px solid #E0E0E0 !important;
+          margin: 32px 0 !important;
+        }
+        
+        /* ============================================ */
+        /* LAYOUT - LARGHEZZA PIENA */
+        /* ============================================ */
+        
+        /* Contenuto generale - larghezza piena */
+        .container-fluid {
+          width: 100% !important;
+          padding-left: 15px !important;
+          padding-right: 15px !important;
+        }
+        
+        /* Tab panels - larghezza piena */
+        .tab-content {
+          width: 100% !important;
+        }
+        
+        .tab-pane {
+          width: 100% !important;
+          padding: 20px !important;
+        }
+        
+        /* SOLO il contenuto MARKDOWN centrato a 900px */
+        .tab-pane > p,
+        .tab-pane > h1,
+        .tab-pane > h2,
+        .tab-pane > h3,
+        .tab-pane > h4,
+        .tab-pane > ul,
+        .tab-pane > ol,
+        .tab-pane > blockquote,
+        .tab-pane > pre {
+          max-width: 900px !important;
+          margin-left: auto !important;
+          margin-right: auto !important;
+        }
+        
+        /* Tabelle e grafici - larghezza piena */
+        .tab-pane > .dataTables_wrapper,
+        .tab-pane > table,
+        .tab-pane > .shiny-plot-output,
+        .tab-pane > .well,
+        .tab-pane > .form-group {
+          max-width: 100% !important;
+          width: 100% !important;
+        }
+        
+        /* ============================================ */
+        /* NAVBAR - Bianca con bordo blu SOPRA */
+        /* ============================================ */
+        .navbar { 
+          background: white !important;
+          min-height: 120px !important;
+          box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1) !important;
+          border-top: 4px solid #3498DB !important;
+          border-bottom: none !important;
+          margin-bottom: 0 !important;
+          padding-top: 10px !important;
+        }
+        
+        .navbar-brand { 
+          padding: 10px 15px !important;
+          height: auto !important;
+        }
+        
+        .navbar-brand img { 
+          height: 90px !important;
+          width: auto !important;
+          object-fit: contain !important;
+          transition: transform 0.3s ease !important;
+          display: block !important;
+        }
+        
+        .navbar-brand img:hover {
+          transform: scale(1.05) !important;
+        }
+        
+        /* ============================================ */
+        /* MENU ITEMS - Con border-radius fisso */
+        /* ============================================ */
+        
+        .navbar-nav > li > a { 
+          color: #2C3E50 !important;
+          font-weight: 600 !important;
+          font-size: 15px !important;
+          margin-top: 35px !important;
+          padding: 10px 20px !important;
+          transition: all 0.3s ease !important;
+          border-radius: 6px !important;
+        }
+        
+        .navbar-nav > li > a:hover { 
+          background-color: #ECF0F1 !important;
+          color: #3498DB !important;
+          transform: translateY(-2px) !important;
+        }
+        
+        /* Menu attivo - mantiene border-radius */
+        .navbar-nav > .active > a,
+        .navbar-nav > .active > a:hover,
+        .navbar-nav > .active > a:focus {
+          background-color: #ECF0F1 !important;
+          color: #3498DB !important;
+          border-radius: 6px !important;
+        }
+        
+        /* ============================================ */
+        /* DROPDOWN MENU - Sfondo bianco */
+        /* ============================================ */
+        
+        .dropdown-menu {
+          background-color: white !important;
+          border: 1px solid #ddd !important;
+          box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15) !important;
+          border-radius: 6px !important;
+          margin-top: 5px !important;
+        }
+        
+        .dropdown-menu > li > a {
+          color: #2C3E50 !important;
+          padding: 10px 20px !important;
+          transition: background-color 0.2s !important;
+          font-weight: 500 !important;
+        }
+        
+        .dropdown-menu > li > a:hover {
+          background-color: #ECF0F1 !important;
+          color: #3498DB !important;
+        }
+        
+        /* ============================================ */
+        /* BOTTONI - Moderni e consistenti */
+        /* ============================================ */
+        .btn {
+          font-family: 'Inter', sans-serif !important;
+          font-weight: 600 !important;
+          font-size: 14px !important;
+          border-radius: 6px !important;
+          padding: 10px 20px !important;
+          transition: all 0.2s ease !important;
+        }
+        
+        .btn-primary {
+          background-color: #3498DB !important;
+          border-color: #3498DB !important;
+        }
+        
+        .btn-primary:hover {
+          background-color: #2980B9 !important;
+          border-color: #2980B9 !important;
+          transform: translateY(-1px) !important;
+          box-shadow: 0 4px 8px rgba(52, 152, 219, 0.3) !important;
+        }
+        
+        /* ============================================ */
+        /* INPUT FIELDS */
+        /* ============================================ */
+        input, select, textarea {
+          font-family: 'Inter', sans-serif !important;
+          font-size: 14px !important;
+          border-radius: 6px !important;
+          border: 1px solid #D0D0D0 !important;
+          padding: 8px 12px !important;
+        }
+        
+        input:focus, select:focus, textarea:focus {
+          border-color: #3498DB !important;
+          box-shadow: 0 0 0 3px rgba(52, 152, 219, 0.1) !important;
+          outline: none !important;
+        }
       "))
     ),
-    
     navbarPage(
       title = shiny::tags$a(
         href = "#",
@@ -485,21 +887,3 @@ ui <- shinyUI(
     )
   )
 )
-
-# Remove the extra closing brace that was causing the error
-# The commented-out alternative UI definition can be removed or kept as a comment
-#  ui <- shinyUI(navbarPage(
-#    title = div(
-#      img(src = "logo.png", 
-#          height = "100px", 
-#          style = "margin-top: 10px; margin-bottom: -10px;"),
-#      style = "margin: 4; padding: 4;"
-#    ),
-#    windowTitle = "uncoverApp",  # This sets the browser tab title
-#    intro(),
-#    preprocess(),
-#    myHome(),
-#    myTab1(),
-#    myTab2(),
-#    myabout()
-#  ))

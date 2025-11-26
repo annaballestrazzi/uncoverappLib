@@ -18,7 +18,7 @@ coord= eventReactive(input$ucsc_lookup,{
   my_gene_name=OrganismDbi::select(org.Hs.eg.db,
                                    key= input$Gene_name,
                                    columns=c("ENTREZID","GENENAME", "ENSEMBL"),
-                                   keytype="ALIAS")
+                                   keytype="SYMBOL")
   ID=my_gene_name$ENTREZID
   if (is.null(ID))
     return(NULL)
@@ -51,10 +51,14 @@ observeEvent(input$ucsc_lookup, {
 
   })
 })
-
-
-# RIMOSSO: tryObserve con updateTextInput per Chromosome
-# Non serve più perché get_chromosome_from_gene() gestisce tutto
+# Auto-update Chromosome input when lookup button is pressed
+observeEvent(input$ucsc_lookup, {
+  req(coord())
+  x <- as.data.frame(coord())
+  Chrom <- as.character(x$seqnames[1])
+  cat("Auto-updating Chromosome input to:", Chrom, "\n")
+  updateTextInput(session, "Chromosome", value = Chrom)
+})
 
 
 Chromosome<- reactive({
@@ -62,7 +66,38 @@ Chromosome<- reactive({
   return(xc)
 })
 
-
+# Chromosome <- reactive({
+#   # Se filtro per gene, calcola cromosoma dal gene
+#   if (input$filter_by == "gene" && !is.null(input$Gene_name) && input$Gene_name != "") {
+#     chr <- tryCatch({
+#       txdb_to_use <- if (input$UCSC_Genome == "hg19") {
+#         TxDb.Hsapiens.UCSC.hg19.knownGene::TxDb.Hsapiens.UCSC.hg19.knownGene
+#       } else {
+#         TxDb.Hsapiens.UCSC.hg38.knownGene::TxDb.Hsapiens.UCSC.hg38.knownGene
+#       }
+      
+#       entrez_info <- AnnotationDbi::select(org.Hs.eg.db, keys = input$Gene_name,
+#                                            columns = "ENTREZID", keytype = "SYMBOL")
+      
+#       if (!is.null(entrez_info) && nrow(entrez_info) > 0) {
+#         gene_info <- AnnotationDbi::select(txdb_to_use, keys = entrez_info$ENTREZID[1],
+#                                            columns = "TXCHROM", keytype = "GENEID")
+        
+#         if (!is.null(gene_info) && nrow(gene_info) > 0) {
+#           chr <- unique(gene_info$TXCHROM)[1]
+#           if (!grepl("^chr", chr)) chr <- paste0("chr", chr)
+#           return(chr)
+#         }
+#       }
+#       NULL
+#     }, error = function(e) NULL)
+    
+#     if (!is.null(chr)) return(chr)
+#   }
+  
+#   # Fallback: input manuale
+#   return(as.character(input$Chromosome))
+# })
 
 
 observeEvent(input$remove,{

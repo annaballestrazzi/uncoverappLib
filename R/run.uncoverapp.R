@@ -11,6 +11,10 @@
 #' @author Emanuela Iovino
 #'
 #' @examples
+#' \donttest{
+#' # Launch Shiny app
+#' uncoverappLib.run()
+#' }
 #' \dontrun{
 #'   # Launch in RStudio viewer
 #'   run.uncoverapp(where = "viewer")
@@ -100,6 +104,18 @@ run.uncoverapp <- function(where = c("browser", "viewer", "window")) {
 #' @param where Character. One of \code{"browser"}, \code{"viewer"}, or \code{"window"}.
 #'
 #' @return No value is returned. The function launches the Shiny app.
+#'
+#' @examples
+#' # Show function signature
+#' args(uncoverappLib.run)
+#' 
+#' \donttest{
+#' # Launch app in browser
+#' uncoverappLib.run()
+#' 
+#' # Launch in RStudio viewer
+#' uncoverappLib.run(where = "viewer")
+#' }
 #'
 #' @export
 uncoverappLib.run <- function(where) {

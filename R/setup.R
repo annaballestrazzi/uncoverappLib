@@ -1,5 +1,20 @@
 #' Setup UncoverApp (download annotation files)
+#'
+#' @description
+#' Downloads and caches annotation files for hg19 and hg38.
+#'
+#' @return Invisibly returns a list of downloaded file paths.
+#'
+#' @examples
+#' # Show function signature
+#' args(setup_uncoverapp)
 #' 
+#' \donttest{
+#' # Download annotation files (one-time setup)
+#' setup_uncoverapp()
+#' }
+#'
+#' @importFrom utils txtProgressBar setTxtProgressBar
 #' @export
 setup_uncoverapp <- function() {
   cat("\n========================================\n")
@@ -7,7 +22,6 @@ setup_uncoverapp <- function() {
   cat("========================================\n\n")
   cat("Checking annotation files...\n\n")
   
-  # Check if files already exist
   cache_dir <- rappdirs::user_cache_dir("uncoverapp")
   existing_files <- if (dir.exists(cache_dir)) {
     list.files(cache_dir, pattern = "\\.gz$", full.names = TRUE)
@@ -25,24 +39,18 @@ setup_uncoverapp <- function() {
     return(invisible(existing_files))
   }
   
-  # Need to download
   cat("Downloading annotation files...\n")
   cat("This will take ~10-20 minutes (~1GB)\n\n")
   
-  # Start progress indicator
   pb <- txtProgressBar(min = 0, max = 100, style = 3, char = "=")
   
-  # Simulate progress during download
-  # (getAnnotationFiles doesn't provide progress, so we fake it)
   for (i in 1:10) {
     Sys.sleep(0.5)
     setTxtProgressBar(pb, i * 10)
   }
   
-  # Actually download
   result <- getAnnotationFiles(assembly = c("hg19", "hg38"), verbose = TRUE)
   
-  # Complete progress bar
   setTxtProgressBar(pb, 100)
   close(pb)
   
@@ -52,7 +60,18 @@ setup_uncoverapp <- function() {
   invisible(result)
 }
 
-#' Check annotation files
+
+#' Check Annotation Files
+#'
+#' @description
+#' Verifies that annotation files are available for both hg19 and hg38.
+#'
+#' @return Invisibly returns a character vector of annotation file paths.
+#'
+#' @examples
+#' # Check if annotation files are available
+#' check_annotations()
+#'
 #' @export
 check_annotations <- function() {
   cache_dir <- rappdirs::user_cache_dir("uncoverapp")

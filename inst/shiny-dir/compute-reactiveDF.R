@@ -221,13 +221,9 @@ filtered_low <- eventReactive(input$calc_low_coverage, {
   cat("\n=== BUTTON PRESSED: calc_low_coverage ===\n")
   
   # ✅ 1. MOSTRA WAITER
-  waiter::waiter_show(
-    html = tagList(
-      waiter::spin_folding_cube(),
-      h3("Calculating low coverage regions...", style = "color: white;"),
-      p("This may take a few minutes", style = "color: white;")
-    ),
-    color = "rgba(0, 0, 0, 0.85)"
+  show_uncoverapp_waiter(
+    message = "Calculating low coverage regions...",
+    detail = "This may take a few minutes"
   )
   
   # ✅ 2. DISABILITA BOTTONE
@@ -510,75 +506,95 @@ filtered_low <- eventReactive(input$calc_low_coverage, {
 
 
 filtered_high <- eventReactive(input$calc_low_coverage, {
-  req(input$coverage_co, input$Sample)
+  cat("\n=== FILTERED_HIGH START ===\n")
   
+  cat("Checking requirements...\n")
+  req(input$coverage_co, input$Sample)
+  cat("Requirements OK\n")
+  
+  cat("Filter by:", input$filter_by, "\n")
+  
+  # Solo per gene mode
+  if (input$filter_by != "gene") {
+    cat("Not gene mode, returning empty\n")
+    return(data.frame())
+  }
+  
+  # CRITICAL FIX: Use SAME LOGIC as filtered_low() to get gene region data
+  cat("Getting sample data from mydata()...\n")
   df <- get_sample_data(mydata(), input$Sample)
   req(df)
+  cat("Sample data OK, rows:", nrow(df), "\n")
+  
+  # Get gene coordinates (SAME as in filtered_low)
+  txdb_to_use <- if (input$UCSC_Genome == "hg19") {
+    TxDb.Hsapiens.UCSC.hg19.knownGene::TxDb.Hsapiens.UCSC.hg19.knownGene
+  } else {
+    TxDb.Hsapiens.UCSC.hg38.knownGene::TxDb.Hsapiens.UCSC.hg38.knownGene
+  }
+  
+  gene_coords <- tryCatch({
+    entrez_info <- AnnotationDbi::select(
+      org.Hs.eg.db,
+      keys = input$Gene_name,
+      columns = "ENTREZID",
+      keytype = "SYMBOL"
+    )
+    
+    if (is.null(entrez_info) || nrow(entrez_info) == 0) {
+      return(NULL)
+    }
+    
+    entrez_id <- entrez_info$ENTREZID[1]
+    gene_info <- AnnotationDbi::select(
+      txdb_to_use,
+      keys = entrez_id,
+      columns = c("TXCHROM", "TXSTART", "TXEND"),
+      keytype = "GENEID"
+    )
+    
+    if (!is.null(gene_info) && nrow(gene_info) > 0) {
+      chr <- unique(gene_info$TXCHROM)[1]
+      if (!grepl("^chr", chr)) chr <- paste0("chr", chr)
+      
+      list(
+        chr = chr,
+        start = min(gene_info$TXSTART, na.rm = TRUE),
+        end = max(gene_info$TXEND, na.rm = TRUE)
+      )
+    } else {
+      NULL
+    }
+  }, error = function(e) {
+    cat("ERROR getting gene coordinates:", e$message, "\n")
+    return(NULL)
+  })
+  
+  if (is.null(gene_coords)) {
+    cat("ERROR: Cannot get gene coordinates\n")
+    return(data.frame())
+  }
+  
+  chr <- gene_coords$chr
+  start_region <- gene_coords$start
+  end_region <- gene_coords$end
+  
+  cat("Gene region:", chr, ":", start_region, "-", end_region, "\n")
+  
   thr <- input$coverage_co
+  cat("Threshold for HIGH coverage: >", thr, "\n")
   
-  # Same logic as filtered_low but with coverage > threshold
+  # Filter for HIGH coverage (> threshold) in ENTIRE gene region
+  result <- dplyr::filter(df, 
+                          chromosome == chr,
+                          end >= start_region, 
+                          start <= end_region,
+                          coverage > as.numeric(thr))
   
-  if (input$filter_by == "all_chr") {
-    result <- if (identical(thr, "all")) {
-      df
-    } else {
-      dplyr::filter(df, coverage > as.numeric(thr))
-    }
-    return(result)
-  }
+  cat("HIGH coverage positions:", nrow(result), "\n")
+  cat("=== FILTERED_HIGH COMPLETE ===\n")
   
-  if (input$filter_by == "gene") {
-    req(input$Gene_name)
-    chr_val <- get_chromosome_from_gene(input$Gene_name, input$UCSC_Genome)
-    req(chr_val)
-    
-    result <- if (identical(thr, "all")) {
-      dplyr::filter(df, chromosome == chr_val)
-    } else {
-      dplyr::filter(df, chromosome == chr_val, coverage > as.numeric(thr))
-    }
-    return(result)
-  }
-  
-  if (input$filter_by == "chromosome") {
-    req(input$Chromosome)
-    chr_val <- input$Chromosome
-    
-    result <- if (identical(thr, "all")) {
-      dplyr::filter(df, chromosome == chr_val)
-    } else {
-      dplyr::filter(df, chromosome == chr_val, coverage > as.numeric(thr))
-    }
-    return(result)
-  }
-  
-  if (input$filter_by == "region") {
-    req(input$query_Database)
-    region_parts <- tryCatch({
-      parts <- strsplit(input$query_Database, "[:-]")[[1]]
-      chr_part <- parts[1]
-      if (!grepl("^chr", chr_part)) chr_part <- paste0("chr", chr_part)
-      list(chr = chr_part, start = as.integer(parts[2]), end = as.integer(parts[3]))
-    }, error = function(e) NULL)
-    
-    req(region_parts)
-    
-    result <- if (identical(thr, "all")) {
-      dplyr::filter(df, 
-                    chromosome == region_parts$chr,
-                    start >= region_parts$start,
-                    end <= region_parts$end)
-    } else {
-      dplyr::filter(df, 
-                    chromosome == region_parts$chr,
-                    start >= region_parts$start,
-                    end <= region_parts$end,
-                    coverage > as.numeric(thr))
-    }
-    return(result)
-  }
-  
-  return(data.frame())
+  return(result)
   
 }, ignoreNULL = TRUE, ignoreInit = TRUE)
 

@@ -1,34 +1,19 @@
 # ============================================================================
-# REACTIVE BASE: Calcolo una sola volta
-# ============================================================================
-
-# ============================================================================
 # compute-annotation.R - ANNOTAZIONE VARIANTI
 # ============================================================================
 
 # ============================================================================
 # STEP 1: QUERY ANNOTATION DATABASE (calcola UNA SOLA VOLTA)
 # ============================================================================
-
 intBED <- eventReactive(input$calc_annotations, {
   cat("\n=== ANNOTATION BUTTON PRESSED ===\n")
-  
-  # ✅ 1. MOSTRA WAITER
-  waiter::waiter_show(
-    html = tagList(
-      waiter::spin_folding_cube(),
-      h3("Querying annotation database...", style = "color: white;"),
-      p("Retrieving variant annotations from Tabix", style = "color: white;"),
-      p("This may take several minutes for large regions", 
-        style = "font-size: 0.9em; opacity: 0.8; color: white;")
-    ),
-    color = "rgba(0, 0, 0, 0.85)"
+    show_uncoverapp_waiter(
+    message = "Calculating annotations...",
+    detail = "Querying dbNSFP database - This may take several minutes"
   )
   
-  # ✅ 2. DISABILITA BOTTONE
   shinyjs::disable("calc_annotations")
   
-  # ✅ 3. CAMBIA TAB
   updateTabsetPanel(session, "tabSet", selected = "Annotations on low-coverage positions")
   
   # ============================================================================
@@ -178,7 +163,6 @@ intBED <- eventReactive(input$calc_annotations, {
   bedB <- do.call(rbind, valid_dfs)
   cat("Combined annotation:", nrow(bedB), "variants\n")
   
-  # PROCESS ANNOTATION
   ncols <- ncol(bedB)
   
   if (ncols == 19) {
@@ -197,8 +181,6 @@ intBED <- eventReactive(input$calc_annotations, {
   bedB$AF_gnomAD <- suppressWarnings(as.numeric(bedB$AF_gnomAD))
   bedB$CADD_PHED <- suppressWarnings(as.numeric(bedB$CADD_PHED))
   
-  # SOSTITUISCI la sezione OVERLAP (da "# OVERLAP" fino a "intersect_df <- data.frame(...)")
-# con questo codice ottimizzato:
 
 # OVERLAP
 cat("Computing overlap...\n")
@@ -237,7 +219,7 @@ if (nrow(bedA_norm) > 10000 || nrow(bedB_norm) > 10000) {
   )
   
   cat("Overlaps found:", nrow(overlaps_dt), "\n")
-  
+
   if (nrow(overlaps_dt) == 0) {
     waiter::waiter_hide()
     shinyjs::enable("calc_annotations")

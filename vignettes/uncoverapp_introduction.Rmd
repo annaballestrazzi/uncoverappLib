@@ -1,0 +1,316 @@
+---
+title: "Introduction to uncoverappLib"
+author: "Emanuela Iovino, Tommaso Pippucci, Anna Ballestrazzi"
+date: "`r Sys.Date()`"
+output: 
+  BiocStyle::html_document:
+    toc: true
+    toc_depth: 2
+vignette: >
+  %\VignetteIndexEntry{Introduction to uncoverappLib}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  fig.width = 7,
+  fig.height = 5
+)
+```
+
+# Introduction
+
+**uncoverappLib** is an interactive Shiny application for clinical assessment and annotation of sequence coverage gaps in targeted sequencing data. It enables visualization and analysis of low-coverage regions at base-pair resolution with comprehensive variant annotation.
+
+## Key Features
+
+- **Coverage Analysis**: Visualize coverage gaps at base-pair resolution
+- **Clinical Annotations**: Integrate dbNSFP v4.0 annotations (CADD, SIFT, PolypPhen2, etc.)
+- **Interactive Plots**: Gviz-based gene tracks with coverage overlays
+- **Statistical Tools**: Binomial probability and maximum credible allele frequency calculators
+- **Export Options**: Formatted Excel files with conditional coloring
+
+## Installation
+
+### Prerequisites
+
+```{r eval=FALSE}
+# R >= 4.0.0
+# Java (for Excel export)
+
+# Bioconductor dependencies
+if (!requireNamespace("BiocManager", quietly = TRUE))
+    install.packages("BiocManager")
+
+BiocManager::install(c(
+  "Gviz", "Homo.sapiens", "org.Hs.eg.db",
+  "TxDb.Hsapiens.UCSC.hg19.knownGene",
+  "TxDb.Hsapiens.UCSC.hg38.knownGene",
+  "EnsDb.Hsapiens.v75", "EnsDb.Hsapiens.v86",
+  "GenomicRanges", "AnnotationDbi"
+))
+```
+
+### Install uncoverappLib
+
+```{r eval=FALSE}
+# From GitHub
+devtools::install_github("annaballestrazzi/uncoverappLib")
+```
+
+## Quick Start
+
+### 1. Setup Annotation Files
+
+```{r eval=FALSE}
+library(uncoverappLib)
+
+# Download annotation databases (run once)
+setup_uncoverapp()
+
+# Verify files are ready
+check_annotations()
+```
+
+### 2. Launch Interactive App
+
+```{r eval=FALSE}
+# Launch in browser (recommended)
+run.uncoverapp()
+
+# Or specify window
+run.uncoverapp(where = "browser")  # Browser
+run.uncoverapp(where = "viewer")   # RStudio viewer
+run.uncoverapp(where = "window")   # RStudio window
+```
+
+## Usage Workflow
+
+### Interactive Mode
+
+#### Step 1: Prepare Input
+
+The app requires coverage data in one of two formats:
+
+**Option A: BAM files**
+```
+gene_list.txt    # One gene per line (HGNC symbols)
+bam_list.txt     # Paths to BAM files (one per line)
+```
+
+**Option B: BED coverage files**
+```
+coverage.bed     # Format: chr  start  end  depth
+```
+
+#### Step 2: Process Data
+
+1. Navigate to **"Processing and Statistical Summary"**
+2. Upload your gene list or target BED
+3. Upload BAM list or BED coverage files
+4. Configure parameters:
+   - Reference genome (hg19/hg38)
+   - Mapping quality (MAPQ)
+   - Base quality
+   - Coordinate system (0-based/1-based)
+5. Click **"Statistical_Summary"** to generate input
+
+#### Step 3: Coverage Analysis
+
+1. Navigate to **"Coverage Analysis"**
+2. Load prepared input file
+3. Set parameters:
+   - Coverage threshold (e.g., 20x)
+   - Sample name
+   - Filter by: gene/chromosome/region
+4. Click **"Calculate Low Coverage Regions"**
+5. View results in tabs:
+   - Low-coverage positions table
+   - Gene coverage plot (Gviz)
+   - UCSC gene coordinates
+
+#### Step 4: Annotation
+
+1. After calculating low coverage regions
+2. Click **"Calculate Annotations on Low Coverage"**
+3. Review annotated variants with:
+   - Population frequencies (gnomAD)
+   - Pathogenicity scores (CADD, SIFT, PolypPhen2)
+   - ClinVar classifications
+   - OMIM associations
+4. Download as formatted Excel file
+
+### Batch Mode (Command-Line)
+
+For automated pipelines:
+
+```{r eval=FALSE}
+# Example: Batch processing
+library(uncoverappLib)
+
+# 1. Build input from BAM files
+coverage_data <- buildInput(
+  gene_list = "genes.txt",
+  bam_list = "samples.txt",
+  genome = "hg19",
+  mapq = 20,
+  base_qual = 20
+)
+
+# 2. Annotate low coverage positions
+annotated <- annotate_all_lowcov(
+  coverage_df = coverage_data,
+  threshold = 20,
+  genome = "hg19"
+)
+
+# 3. Export results
+write.table(annotated, "results.txt", sep="\t", quote=FALSE)
+```
+
+## Input File Formats
+
+### Gene List (gene_list.txt)
+```
+BRCA1
+BRCA2
+TP53
+POLG
+```
+
+### BAM List (bam_list.txt)
+```
+/path/to/sample1.bam
+/path/to/sample2.bam
+```
+
+### BED Coverage (coverage.bed)
+```
+chr1  1000  1001  25
+chr1  1001  1002  30
+chr1  1002  1003  18
+```
+
+### Target BED (optional)
+```
+chr1  1000  2000  GENE1
+chr2  5000  6000  GENE2
+```
+
+## Output Files
+
+### Statistical Summary
+Tab-separated file with per-gene statistics:
+- Total bases
+- Mean/median coverage
+- Percentage bases under threshold
+- OMIM annotations
+
+### Annotated Variants (Excel)
+Formatted Excel with:
+- Genomic coordinates
+- Coverage depth
+- dbNSFP annotations
+- Conditional formatting (red=pathogenic, green=benign)
+- Highlighted important variants
+
+## Advanced Features
+
+### Maximum Credible Allele Frequency
+
+Calculate disease-specific AF thresholds:
+
+```{r eval=FALSE}
+# In the "Calculate AF" tab
+# Input parameters:
+# - Disease prevalence
+# - Genetic heterogeneity
+# - Allelic heterogeneity
+# - Penetrance
+```
+
+### Binomial Distribution
+
+Assess probability of observing variants at low coverage:
+
+```{r eval=FALSE}
+# In the "Binomial Distribution" tab
+# Visualize probability distributions
+# For quality control of variant calls
+```
+
+## Best Practices
+
+### Data Preparation
+
+1. **Gene names**: Use official HGNC symbols
+2. **BAM files**: Ensure proper indexing (.bai files)
+3. **Coverage threshold**: Standard clinical = 20x
+4. **Coordinate system**: BED files are typically 0-based
+
+### Performance Tips
+
+1. **Large datasets**: Use batch mode instead of interactive
+2. **Memory**: Close unnecessary applications
+3. **Annotation**: First time is slow (downloads databases)
+4. **Gene filtering**: Reduces processing time significantly
+
+### Quality Control
+
+1. **Check gene coverage**: Verify all target genes have data
+2. **Review plots**: Look for systematic coverage drops
+3. **Validate annotations**: Cross-reference with ClinVar
+4. **Export results**: Keep formatted Excel for reporting
+
+## Troubleshooting
+
+### Common Issues
+
+**"Gene not found in org.Hs.eg.db"**
+- Use official HGNC symbols
+- Check gene name spelling
+- Try aliases (e.g., FAM161A vs FAM161A1)
+
+**"Annotation files not found"**
+```{r eval=FALSE}
+# Re-run setup
+setup_uncoverapp()
+check_annotations()
+```
+
+**"No low coverage positions found"**
+- Check coverage threshold (may be too low)
+- Verify sample name matches column name
+- Ensure filtering parameters are correct
+
+**Plot rendering slow**
+- Large gene regions take time
+- Use "Zoom to sequence" for specific intervals
+- Consider command-line mode for batch processing
+
+## Citation
+
+If you use uncoverappLib in your research, please cite:
+
+> Pippucci T, Iovino E, et al. (2020). unCOVERApp: an interactive web application for clinical assessment and annotation of coverage gaps. *bioRxiv*. doi: 10.1101/2020.02.10.939769
+
+## Session Info
+
+```{r}
+sessionInfo()
+```
+
+## Additional Resources
+
+- **GitHub**: https://github.com/annaballestrazzi/uncoverappLib
+- **Paper**: https://www.biorxiv.org/content/10.1101/2020.02.10.939769v1
+- **Zenodo**: https://zenodo.org/records/17524340 (annotation files)
+
+## Contact
+
+For questions, bug reports, or feature requests:
+- **Issues**: https://github.com/annaballestrazzi/uncoverappLib/issues
+- **Email**: emanuela.iovino@unibo.it

@@ -12,7 +12,7 @@ Imports: markdown, shiny, shinyjs, shinyBS, shinyWidgets,shinycssloaders, DT,
         TxDb.Hsapiens.UCSC.hg19.knownGene, rlist, utils,S4Vectors,
         EnsDb.Hsapiens.v75, EnsDb.Hsapiens.v86, OrganismDbi,
         processx, Rsamtools, bedr, dplyr, tidyselect, GenomicRanges, 
-        AnnotationDbi, GenomeInfoDb, IRanges, waiter
+        AnnotationDbi, GenomeInfoDb, IRanges, waiter, BiocStyle, testthat, knitr, rmarkdown
 Description: a Shiny application containing a suite of graphical and statistical tools to support clinical assessment of low coverage regions.It displays three web pages each providing a different analysis module: Coverage analysis, calculate AF by allele frequency app and binomial distribution. uncoverAPP provides a statisticl summary of coverage given target file or genes name.
 License: MIT + file LICENSE
 Encoding: UTF-8

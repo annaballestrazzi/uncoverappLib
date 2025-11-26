@@ -3,33 +3,42 @@
 #' @description
 #' This function identifies ALL genomic positions with low coverage (genome-wide)
 #' and annotates them with variant information from a reference annotation database.
-#' Unlike annotate_variants(), this processes the entire genome, not just a specific gene.
 #'
 #' @param sample_data Character. Path to input coverage data file in TSV format.
 #' @param target_sample Character. Name of the target sample/coverage column.
 #' @param coverage_threshold Numeric. Maximum coverage threshold. Default is 20.
 #' @param genome Character. Genome build: "hg19" or "hg38". Default is "hg19".
 #' @param annotation_file Character or NULL. Path to annotation BED file (.bed.gz).
-#' @param output_intersect Character. Path for output TSV file. Default is "annotated_all_lowcov.tsv".
-#' @param output_formatted Character. Path for output Excel file. Default is "annotated_all_lowcov.xlsx".
+#' @param output_intersect Character. Path for output TSV file.
+#' @param output_formatted Character. Path for output Excel file.
 #'
 #' @details
-#' This function:
-#' 1. Loads coverage data from input TSV file
-#' 2. Filters ALL positions by coverage threshold (genome-wide)
-#' 3. Queries annotation database for ALL low-coverage positions
-#' 4. Annotates with functional predictions
-#' 5. Generates formatted output files
-#'
-#' Unlike annotate_variants(), this does NOT:
-#' - Query UCSC for specific gene coordinates
-#' - Filter by a specific genomic region
-#' - Require a gene symbol parameter
+#' This function processes the entire genome to identify and annotate
+#' all low-coverage positions.
 #'
 #' @return Invisibly returns annotated variants data.frame
-#' @export
 #'
-annotate_all_lowcov <- function(sample_data,
+#' @examples
+#' # Show function signature
+#' args(buildAnnotation)
+#' 
+#' \dontrun{
+#' # Full example (requires external files)
+#' buildAnnotation(
+#'   sample_data = "coverage.bed",
+#'   target_sample = "sample1",
+#'   coverage_threshold = 20,
+#'   genome = "hg38",
+#'   output_formatted = "annotated.xlsx"
+#' )
+#' }
+#' @importFrom GenomicRanges makeGRangesFromDataFrame findOverlaps reduce
+#' @importFrom Rsamtools scanTabix
+#' @importFrom S4Vectors queryHits subjectHits
+#' @importFrom dplyr filter mutate select arrange
+#' @importFrom openxlsx createWorkbook addWorksheet writeData saveWorkbook
+#' @export
+buildAnnotation <- function(sample_data,
                                target_sample,
                                coverage_threshold = 20,
                                genome = "hg19",
@@ -49,16 +58,18 @@ annotate_all_lowcov <- function(sample_data,
   if (!genome %in% c("hg19", "hg38")) {
     stop("Genome must be 'hg19' or 'hg38'")
   }
-  
-  # Load required packages
-  suppressPackageStartupMessages({
-    require(dplyr)
-    require(GenomicRanges)
-    require(IRanges)
-    require(Rsamtools)
-    require(S4Vectors)
-    require(openxlsx)
-  })
+  # Packages loaded via NAMESPACE imports
+  # No explicit library() calls needed
+
+  # # Load required packages
+  # suppressPackageStartupMessages({
+  #   require(dplyr)
+  #   require(GenomicRanges)
+  #   require(IRanges)
+  #   require(Rsamtools)
+  #   require(S4Vectors)
+  #   require(openxlsx)
+  # })
   
   # ==============================================================================
   # CONFIGURATION
@@ -200,24 +211,23 @@ annotate_all_lowcov <- function(sample_data,
   if (!is.null(annotation_file) && file.exists(annotation_file)) {
     file.name <- annotation_file
     cat("Using annotation file:", file.name, "\n")
-  } else {
-    test_hg19 <- "/home/anna/uncoverappLib/traials/geneApp/R/sorted_hg19.bed.gz"
-    test_hg38 <- "/home/anna/uncoverappLib/traials/geneApp/R/sorted_hg38.bed.gz"
-    
-    env_hg19 <- Sys.getenv("UNCOVERAPP_HG19_ANNOTATION", unset = "")
-    env_hg38 <- Sys.getenv("UNCOVERAPP_HG38_ANNOTATION", unset = "")
-    
-    file.name <- NULL
-    
-    if (identical(genome, "hg19") && nzchar(env_hg19) && file.exists(env_hg19)) {
-      file.name <- env_hg19
-    } else if (identical(genome, "hg38") && nzchar(env_hg38) && file.exists(env_hg38)) {
-      file.name <- env_hg38
-    } else if (identical(genome, "hg19") && file.exists(test_hg19)) {
-      file.name <- test_hg19
-    } else if (identical(genome, "hg38") && file.exists(test_hg38)) {
-      file.name <- test_hg38
-    }
+  } else {  
+    genome_choose <- genome
+    m <- uncoverappLib::getAnnotationFiles(assembly = genome_choose , verbose = TRUE)
+    annotation <- sapply(m, function(x) x[1])
+    cat (". ", annotation,"\n")
+    #env_hg19 <- Sys.getenv("UNCOVERAPP_HG19_ANNOTATION", unset = "")
+    #env_hg38 <- Sys.getenv("UNCOVERAPP_HG38_ANNOTATION", unset = "")
+    file.name <- annotation
+    #if (identical(genome, "hg19") && nzchar(env_hg19) && file.exists(env_hg19)) {
+    #  file.name <- env_hg19
+    #} else if (identical(genome, "hg38") && nzchar(env_hg38) && file.exists(env_hg38)) {
+    #  file.name <- env_hg38
+    #} else if (identical(genome, "hg19") && file.exists(test_hg19)) {
+    #  file.name <- test_hg19
+    #} else if (identical(genome, "hg38") && file.exists(test_hg38)) {
+    #  file.name <- test_hg38
+    #}
     
     if (is.null(file.name)) {
       stop("Could not find annotation file. Please specify with annotation_file parameter")
@@ -317,7 +327,7 @@ annotate_all_lowcov <- function(sample_data,
   
   if (ncols == 19) {
     colnames(bedB) <- c('Chromo', 'start', 'end', 'REF', 'ALT',
-                        'dbsnp', 'GENENAME', 'PROTEIN_ensembl', 'field9',
+                        'dbsnp', 'GENENAME', 'PROTEIN_ensembl',
                         'MutationAssessor', 'SIFT', 'Polyphen2',
                         'M_CAP', 'CADD_PHED', 'AF_gnomAD', 'ClinVar',
                         'clinvar_MedGen_id', 'HGVSc_VEP', 'HGVSp_VEP')
@@ -641,3 +651,13 @@ annotate_all_lowcov <- function(sample_data,
   cat("\n=== DONE ===\n")
   invisible(intersect_df)
 }
+utils::globalVariables(c(
+  "ClinVar", 
+  "CADD_PHED", 
+  "AF_gnomAD", 
+  "desc",
+  "chromosome",
+  "start",
+  "end",
+  "coverage"
+))

@@ -1,4 +1,6 @@
 server <- function (input, output, session){
+
+
   suppressPackageStartupMessages({
     require(dplyr)
     require(Gviz)
@@ -41,6 +43,7 @@ server <- function (input, output, session){
   source('compute-plots.R', local=TRUE)
   source('compute-maxAF.R', local=TRUE)            # data(), uncover_maxaf_data(), uncover_maxaf()
   source('compute-binomial.R', local=TRUE)
+  source('waiter-helpers.R', local=TRUE)
 
 
 
@@ -85,110 +88,131 @@ server <- function (input, output, session){
   
   output$input1 <- renderDataTable({
     options(shiny.sanitize.errors = TRUE)
-      start_time <- Sys.time()   # Start time
-    progress <- shiny::Progress$new()
-    on.exit(progress$close())
-    progress$set(message = "table construction in progress",
-                 detail = 'This may take a while', value = 0)
-    Sys.sleep(0.1)
-    validate(
-      need(try(!is.null(coverage_input())), "please upload a file with HGNC
-      gene names and absolute path(s) to BAM file"))
-  
-    df <- coverage_input()
-  
-    end_time <- Sys.time()     # ⏱️ end
-    print(paste("Tempo di esecuzione:", round(end_time - start_time, 2)))  # console
-  
-    df
+    
+    # ✅ NUOVO: Waiter con logo invece della vecchia progress bar
+    show_uncoverapp_waiter(
+      message = "Preparing coverage input file...",
+      detail = "Processing BAM/BED files - This may take several minutes"
+    )
+    
+    start_time <- Sys.time()
+    
+    tryCatch({
+      validate(
+        need(try(!is.null(coverage_input())), 
+            "Please upload a file with HGNC gene names and absolute path(s) to BAM/BED files")
+      )
+      
+      df <- coverage_input()
+      
+      end_time <- Sys.time()
+      cat(paste("⏱️ Table created in:", 
+                round(difftime(end_time, start_time, units = "secs"), 1), 
+                "seconds\n"))
+      
+      # Nascondi waiter
+      waiter::waiter_hide()
+      
+      # Notifica successo
+      showNotification(
+        paste0("✓ Input table ready: ", nrow(df), " intervals processed"),
+        type = "message",
+        duration = 3
+      )
+      
+      return(df)
+      
+    }, error = function(e) {
+      waiter::waiter_hide()
+      showNotification(
+        paste("Error creating input table:", e$message),
+        type = "error",
+        duration = 5
+      )
+      return(NULL)
+    })
   })
 
   # ============================================================================
   # DOWNLOAD: STATISTICAL SUMMARY
   # ============================================================================
   
-output$summary <- downloadHandler(
+  output$summary <- downloadHandler(
     filename = function() {
-      paste('statistical_summary_', input$file1, '_', Sys.Date(), '.txt', sep='')
+      paste('statistical_summary_', Sys.Date(), '.txt', sep='')
     },
+    
     content = function(file){
       cat("\n=== DOWNLOAD HANDLER START ===\n")
       
-      # Get stat_summ data
-      original_data <- stat_summ()
+      # ✅ NUOVO: Waitress con progress tracking
+      waitress <- create_uncoverapp_waitress()
+      waitress$start()
       
-      if (is.null(original_data) || nrow(original_data) == 0) {
-          cat("ERROR: stat_summ() returned NULL or empty data\n")
+      tryCatch({
+        # Step 1: Calcola statistiche (30%)
+        show_progress_step(waitress, "Calculating statistics", 30)
+        original_data <- stat_summ()
+        
+        if (is.null(original_data) || nrow(original_data) == 0) {
+          waitress$close()
+          showNotification("No data to export!", type = "error", duration = 5)
           return(NULL)
-      }
-      
-      fourth.file <- system.file(
-        "extdata",
-        "sys_ndd_2025_subset.tsv",
-        package = "uncoverappLib"
-      )
-      cat("Step 1 - stat_summ() output:\n")
-      cat("  Rows:", nrow(original_data), "\n")
-      cat("  Columns:", paste(colnames(original_data), collapse=", "), "\n")
-      cat("  First 3 rows:\n")
-      print(head(original_data, 3))
-      cat("\n")
-      
-      # Load OMIM data
-      cat("Step 2 - Loading OMIM data...\n")
-      omim_gene <- read.table(
+        }
+        
+        cat("  Rows:", nrow(original_data), "\n")
+        
+        # Step 2: Carica OMIM (20%)
+        show_progress_step(waitress, "Loading OMIM annotations", 20)
+        fourth.file <- system.file(
+          "extdata",
+          "sys_ndd_2025_subset.tsv",
+          package = "uncoverappLib"
+        )
+        
+        omim_gene <- read.table(
           fourth.file, 
           header = TRUE, 
           sep = "\t", 
           stringsAsFactors = FALSE,
           quote = "",
           fill = TRUE
-      )
-      
-      cat("  OMIM rows:", nrow(omim_gene), "\n")
-      cat("  OMIM columns:", paste(colnames(omim_gene), collapse=", "), "\n")
-      cat("  First 3 rows:\n")
-      print(head(omim_gene, 3))
-      cat("\n")
-      
-      # Check for SYMBOL column in both
-      if (!"SYMBOL" %in% colnames(original_data)) {
+        )
+        
+        cat("  OMIM rows:", nrow(omim_gene), "\n")
+        
+        # Check for SYMBOL column
+        if (!"SYMBOL" %in% colnames(original_data)) {
+          waitress$close()
           stop("ERROR: original_data missing SYMBOL column!")
-      }
-      if (!"SYMBOL" %in% colnames(omim_gene)) {
+        }
+        if (!"SYMBOL" %in% colnames(omim_gene)) {
+          waitress$close()
           stop("ERROR: omim_gene missing SYMBOL column!")
-      }
-      
-      # Merge
-      cat("Step 3 - Merging data...\n")
-      joined_data <- merge(
+        }
+        
+        # Step 3: Merge dati (30%)
+        show_progress_step(waitress, "Merging data with annotations", 30)
+        joined_data <- merge(
           original_data, 
           omim_gene, 
           by = "SYMBOL", 
           all.x = TRUE,
           suffixes = c("", ".omim")
-      )
-      
-      cat("  Rows after merge:", nrow(joined_data), "\n")
-      cat("  Columns after merge:", paste(colnames(joined_data), collapse=", "), "\n")
-      cat("  First 3 rows:\n")
-      print(head(joined_data, 3))
-      cat("\n")
-      
-      # Reorder columns: statistics first, then OMIM
-      stat_cols <- c("SYMBOL", "sample", "Total_bases", "Mean_coverage", 
-                     "Median_coverage", "number_of_intervals_under_20x", 
-                     "bases_under_20x", "percentage_bases_under_20x")
-      omim_cols <- setdiff(colnames(joined_data), stat_cols)
-      
-      joined_data <- joined_data[, c(stat_cols, omim_cols)]
-      
-      cat("Step 4 - Final column order:\n")
-      cat("  ", paste(colnames(joined_data), collapse=", "), "\n\n")
-      
-      # Write result
-      cat("Step 5 - Writing to file...\n")
-      write.table(
+        )
+        
+        cat("  Rows after merge:", nrow(joined_data), "\n")
+        
+        # Reorder columns
+        stat_cols <- c("SYMBOL", "sample", "Total_bases", "Mean_coverage", 
+                      "Median_coverage", "number_of_intervals_under_20x", 
+                      "bases_under_20x", "percentage_bases_under_20x")
+        omim_cols <- setdiff(colnames(joined_data), stat_cols)
+        joined_data <- joined_data[, c(stat_cols, omim_cols)]
+        
+        # Step 4: Scrivi file (20%)
+        show_progress_step(waitress, "Writing summary file", 20)
+        write.table(
           joined_data, 
           file, 
           sep = '\t', 
@@ -196,12 +220,31 @@ output$summary <- downloadHandler(
           row.names = FALSE, 
           col.names = TRUE,
           na = "NA"
-      )
-      
-      cat("=== DOWNLOAD COMPLETE ===\n")
-      cat("File saved:", file, "\n\n")
+        )
+        
+        waitress$close()
+        
+        # Notifica successo
+        showNotification(
+          "✓ Statistical summary created successfully!",
+          type = "message",
+          duration = 3
+        )
+        
+        cat("=== DOWNLOAD COMPLETE ===\n")
+        cat("File saved:", file, "\n\n")
+        
+      }, error = function(e) {
+        waitress$close()
+        showNotification(
+          paste("Download error:", e$message),
+          type = "error",
+          duration = 5
+        )
+        cat("ERROR:", e$message, "\n")
+      })
     }
-)
+  )
 
 
   # ============================================================================
@@ -237,84 +280,53 @@ output$summary <- downloadHandler(
   # ============================================================================
   # OUTPUT: ALL GENE COVERAGE PLOT
   # ============================================================================
-  
   output$all_gene <- renderPlot({
     validate(
-      need(ncol(mydata()) != "0", "Unrecognized data set: Please
-           upload your file"))
-    options(shiny.sanitize.errors = TRUE)
-    progress <- shiny::Progress$new()
-    on.exit(progress$close())
-    progress$set(message = "Please wait a few minutes: Making plot",
-                 detail = 'This may take a while', value = 0)
-    for (i in 1:40) {
-      progress$set(message = "Please wait a few minutes: Making plot",
-                   detail = 'This may take a while', value = i)
-      Sys.sleep(1.0)
-    }
-    Sys.sleep(0.1)
-    p1()
-  })
-
-  # ============================================================================
-  # OUTPUT: LOW COVERAGE POSITIONS TABLE
-  # ============================================================================
-  
-  output$df.l <- DT::renderDataTable({
-    table1()
-  })
-
-  # ============================================================================
-  # OUTPUT: SEQUENCE PLOT
-  # ============================================================================
-  
-  output$sequence <- renderPlot({
-    validate(
-      need(ncol(mydata()) != "0",
-           "Unrecognized data set: Please load your file"))
-    validate(
-      need(input$Start_genomicPosition < input$end_genomicPosition,
-           "Please select the right genomic position: end position is
-           lower than start "))
-    options(shiny.sanitize.errors = TRUE)
-    progress <- shiny::Progress$new()
-    for (i in 1:40) {
-      progress$set(message = "Please wait a few minutes: Making plot",
-                   detail = 'This may take a while', value = i)
-      Sys.sleep(1.0)
-    }
-    on.exit(progress$close())
-    Sys.sleep(0.1)
-    p3()
-  })
-
-  # ============================================================================
-  # OUTPUT: ANNOTATION SUMMARY TABLE
-  # Conta varianti ClinVar e MutationAssessor H/M
-  # ============================================================================
-  
-  output$tabExon <- DT::renderDataTable({
-    # RIMUOVI validazione Gene_name
-    # Valida SOLO che annotated_variants_data() esista
-    data <- annotated_variants_data()
-  
-    if (is.null(data) || nrow(data) == 0) {
-      return(NULL)
-    }
-  
-    # Conta varianti importanti
-    df <- data.frame(
-      clinvar_count = length(which(data$ClinVar != '.')),
-      high_medium_count = length(which(grepl("H|M", data$MutationAssessor)))
+      need(ncol(mydata()) != "0", "Please upload your file")
     )
-  
-    colnames(df) <- c('Low coverage positions in ClinVar',
-                    'Low coverage positions with High or Medium impact')
-  
-    return(df)
+    
+    # ✅ NUOVO: Waitress con progress REALE
+    waitress <- create_uncoverapp_waitress()
+    waitress$start()
+    
+    tryCatch({
+      show_progress_step(waitress, "Validating data", 20)
+      req(coord(), Chromosome())
+      
+      show_progress_step(waitress, "Creating data tracks", 30)
+      # Qui il plot si genera davvero
+      
+      show_progress_step(waitress, "Creating genome tracks", 20)
+      
+      show_progress_step(waitress, "Rendering plot", 30)
+      plot_result <- p1()
+      
+      waitress$close()
+      return(plot_result)
+      
+    }, error = function(e) {
+      waitress$close()
+      showNotification(paste("Plot error:", e$message), type = "error")
+      return(NULL)
+    })
   })
-
-
+  # output$all_gene <- renderPlot({
+  #   validate(
+  #     need(ncol(mydata()) != "0", "Unrecognized data set: Please
+  #         upload your file"))
+  #   options(shiny.sanitize.errors = TRUE)
+  #   progress <- shiny::Progress$new()
+  #   on.exit(progress$close())
+  #   progress$set(message = "Please wait a few minutes: Making plot",
+  #               detail = 'This may take a while', value = 0)
+  #   for (i in 1:40) {
+  #     progress$set(message = "Please wait a few minutes: Making plot",
+  #                 detail = 'This may take a while', value = i)
+  #     Sys.sleep(1.0)
+  #   }
+  #   Sys.sleep(0.1)
+  #   p1()
+  # })
   # ============================================================================
   # OUTPUT: ANNOTATED VARIANTS TABLE (DT WIDGET)
   # TABELLA PRINCIPALE CON FORMATTING
@@ -384,7 +396,6 @@ output$summary <- downloadHandler(
       
       # Scrivi dati
       openxlsx::writeData(wb, "Variants", data_export, headerStyle = hs)
-      
       # Trova indici delle colonne dinamicamente
       col_names <- colnames(data_export)
       col_MutationAssessor <- which(col_names == "MutationAssessor")

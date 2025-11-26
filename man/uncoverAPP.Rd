@@ -19,6 +19,10 @@ The app can be launched in different environments using the \code{where} paramet
 }
 }
 \examples{
+\donttest{
+# Launch Shiny app
+uncoverappLib.run()
+}
 \dontrun{
   # Launch in RStudio viewer
   run.uncoverapp(where = "viewer")

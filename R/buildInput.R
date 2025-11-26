@@ -62,6 +62,21 @@ utils::globalVariables(c(
 #' @importFrom tidyselect all_of
 #'
 #' @examples
+#' # Show function signature
+#' args(buildInput)
+#' 
+#' \dontrun{
+#' # Process BAM files
+#' buildInput(
+#'   geneList = "genes.txt",
+#'   sampleList = "samples.list",
+#'   genome = "hg38",
+#'   chromosome_notation = "chr",
+#'   type_input = "genes",
+#'   type_coverage = "bam",
+#'   outDir = tempdir()
+#' )
+#' }
 #' \dontrun{
 #' # Example 1: Process BAM files
 #' gene_list <- system.file("extdata", "mygene.txt", package = "uncoverappLib")
