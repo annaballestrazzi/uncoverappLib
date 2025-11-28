@@ -670,6 +670,35 @@ max(c(10, 20, 30))
 # Example 13
 min(c(10, 20, 30))
 ```
+```{r}
+# Example: GRanges object creation
+library(GenomicRanges)
+gr <- GRanges("chr1", IRanges(1000, 2000))
+width(gr)
+```
+```{r}
+# Example: Data frame manipulation
+df <- data.frame(chr = "chr1", pos = 1:5, cov = c(10, 20, 15, 25, 30))
+subset(df, cov >= 20)
+```
+```{r}
+# Example: Coverage threshold filtering
+coverage_values <- c(5, 15, 25, 35, 10, 40)
+sum(coverage_values < 20)  # Count low coverage
+```
+```{r}
+# Example: Calculate percentage below threshold
+below_threshold <- sum(coverage_values < 20)
+percentage <- (below_threshold / length(coverage_values)) * 100
+percentage
+```
+```{r}
+# Example: Genomic coordinate ranges
+start_pos <- 1000
+end_pos <- 5000
+region_size <- end_pos - start_pos + 1
+region_size
+```
 ## Session Info
 ```{r}
 sessionInfo()
