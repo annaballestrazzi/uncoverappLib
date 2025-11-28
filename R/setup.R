@@ -9,7 +9,7 @@
 #' # Show function signature
 #' args(setup_uncoverapp)
 #' 
-#' \donttest{
+#' \dontrun{
 #' # Download annotation files (one-time setup)
 #' setup_uncoverapp()
 #' }

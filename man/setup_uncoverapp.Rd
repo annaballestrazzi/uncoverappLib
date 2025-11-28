@@ -16,7 +16,7 @@ Downloads and caches annotation files for hg19 and hg38.
 # Show function signature
 args(setup_uncoverapp)
 
-\donttest{
+\dontrun{
 # Download annotation files (one-time setup)
 setup_uncoverapp()
 }

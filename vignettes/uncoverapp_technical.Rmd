@@ -15,8 +15,7 @@ vignette: >
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(
   collapse = TRUE,
-  comment = "#>",
-  eval = FALSE
+  comment = "#>"
 )
 ```
 
@@ -59,7 +58,7 @@ uncoverappLib/
 
 Converts BAM or BED files into unified coverage format:
 
-```{r}
+```r
 # Pseudocode
 coverage_input <- function(bam_files, genes, genome) {
   
@@ -92,7 +91,7 @@ coverage_input <- function(bam_files, genes, genome) {
 
 Reactive filtering based on user parameters:
 
-```{r}
+```r
 # Event-driven computation
 filtered_low <- eventReactive(input$calc_low_coverage, {
   
@@ -124,7 +123,7 @@ filtered_low <- eventReactive(input$calc_low_coverage, {
 
 Queries dbNSFP database using Tabix:
 
-```{r}
+```r
 # Annotation pipeline
 annotate_positions <- function(positions, genome) {
   
@@ -158,7 +157,7 @@ annotate_positions <- function(positions, genome) {
 
 Gviz-based gene coverage plots:
 
-```{r}
+```r
 # Plot generation
 create_gene_plot <- function(gene, coverage_data, genome) {
   
@@ -206,7 +205,7 @@ create_gene_plot <- function(gene, coverage_data, genome) {
 
 ### Reactive Programming Model
 
-```{r}
+```r
 # Data flow
 #User Input → Reactive Values → Reactive Expressions → Outputs
 #    ↓              ↓                    ↓                ↓
@@ -219,7 +218,7 @@ create_gene_plot <- function(gene, coverage_data, genome) {
 
 Key reactive functions use `eventReactive` to prevent unnecessary recalculation:
 
-```{r}
+```r
 # Only updates when button is clicked
 filtered_low <- eventReactive(input$calc_low_coverage, {
   # Heavy computation here
@@ -234,7 +233,7 @@ sample_name <- isolate(input$Sample)
 ### Performance Patterns
 
 **Waiter/Waitress Integration**:
-```{r}
+```r
 # Show loading screen
 show_uncoverapp_waiter("Processing...")
 
@@ -287,7 +286,7 @@ chr1      1001   1002    30        35                32    GENE1
 
 To integrate additional annotation sources:
 
-```{r}
+```r
 # 1. Create Tabix-indexed file
 system("bgzip annotation.bed")
 system("tabix -p bed annotation.bed.gz")
@@ -319,7 +318,7 @@ query_custom_annotation <- function(positions, anno_file) {
 
 To create custom visualization modules:
 
-```{r}
+```r
 # 1. Create reactive data source
 custom_plot_data <- reactive({
   # Process coverage data for custom visualization
@@ -346,7 +345,7 @@ output$custom_plot <- renderPlot({
 
 Example: Fisher's exact test for coverage comparison:
 
-```{r}
+```r
 # New module: compute-fisher.R
 fisher_coverage_test <- reactive({
   
@@ -372,7 +371,7 @@ fisher_coverage_test <- reactive({
 
 ### Unit Tests (testthat)
 
-```{r}
+```r
 # tests/testthat/test-buildInput.R
 test_that("BAM pileup produces correct output", {
   # Setup test data
@@ -395,7 +394,7 @@ test_that("BAM pileup produces correct output", {
 
 ### Integration Tests
 
-```{r}
+```r
 # Test full pipeline
 test_that("Complete analysis workflow", {
   
@@ -419,7 +418,7 @@ test_that("Complete analysis workflow", {
 ### Memory Management
 
 **Large Files**:
-```{r}
+```r
 # Process in chunks
 chunk_size <- 10000
 
@@ -431,7 +430,7 @@ for (i in seq(1, nrow(data), by = chunk_size)) {
 ```
 
 **Data.table for Speed**:
-```{r}
+```r
 # Convert to data.table for faster operations
 library(data.table)
 dt <- as.data.table(coverage_data)
@@ -448,7 +447,7 @@ stats <- dt[, .(
 
 ### Parallel Processing
 
-```{r}
+```r
 # Use parallel for independent operations
 library(parallel)
 
@@ -465,9 +464,213 @@ results <- parLapply(cl, sample_list, function(sample) {
 
 stopCluster(cl)
 ```
+## Code Examples
 
+### Working with Coverage Data Structures
+```{r}
+# Example: Create coverage data structure
+coverage_df <- data.frame(
+  chr = c("chr1", "chr1", "chr2"),
+  pos = c(1000, 1001, 2000),
+  coverage = c(15, 25, 30),
+  stringsAsFactors = FALSE
+)
+
+# Filter low coverage
+low_cov <- coverage_df[coverage_df$coverage < 20, ]
+print(paste("Found", nrow(low_cov), "low coverage positions"))
+```
+
+### Summary Statistics
+```{r}
+# Calculate coverage statistics
+mean_coverage <- mean(coverage_df$coverage)
+median_coverage <- median(coverage_df$coverage)
+cat("Mean coverage:", mean_coverage, "\n")
+cat("Median coverage:", median_coverage, "\n")
+```
+
+### Coordinate Conversion Example
+```{r}
+# Example: Convert 0-based to 1-based coordinates
+bed_coords <- data.frame(
+  chr = "chr1",
+  start = 999,  # 0-based
+  end = 1000
+)
+
+# Convert to 1-based (add 1 to start)
+vcf_coords <- bed_coords
+vcf_coords$start <- vcf_coords$start + 1
+print(vcf_coords)
+```
+
+### Gene Filtering Example
+```{r}
+# Example: Filter by gene
+all_positions <- data.frame(
+  chr = c("chr1", "chr1", "chr2"),
+  pos = c(1000, 1001, 2000),
+  gene = c("BRCA1", "BRCA1", "TP53")
+)
+
+# Filter for specific gene
+brca1_only <- all_positions[all_positions$gene == "BRCA1", ]
+cat("BRCA1 positions:", nrow(brca1_only), "\n")
+```
+### Coverage Statistics by Chromosome
+```{r}
+# Example: Group statistics by chromosome
+multi_chr <- data.frame(
+  chr = c("chr1", "chr1", "chr2", "chr2"),
+  coverage = c(15, 25, 30, 8)
+)
+
+# Calculate mean by chromosome
+tapply(multi_chr$coverage, multi_chr$chr, mean)
+```
+
+### Threshold Classification
+```{r}
+# Example: Classify coverage levels
+coverage_values <- c(5, 15, 25, 35, 45)
+classification <- ifelse(coverage_values < 20, "low", 
+                         ifelse(coverage_values < 30, "medium", "high"))
+data.frame(coverage = coverage_values, class = classification)
+```
+
+### Position Range Calculation
+```{r}
+# Example: Calculate range size
+positions <- data.frame(
+  start = c(1000, 2000, 3000),
+  end = c(1100, 2050, 3200)
+)
+positions$size <- positions$end - positions$start
+print(positions)
+```
+
+### Coverage Comparison
+```{r}
+# Example: Compare coverage between samples
+sample_comparison <- data.frame(
+  position = c(1000, 1001, 1002),
+  sample_A = c(25, 30, 15),
+  sample_B = c(20, 28, 12)
+)
+sample_comparison$difference <- sample_comparison$sample_A - sample_comparison$sample_B
+print(sample_comparison)
+```
+
+### Percentage Calculation
+```{r}
+# Example: Calculate percentage of low coverage positions
+total_positions <- 1000
+low_coverage_count <- 150
+percentage <- (low_coverage_count / total_positions) * 100
+cat("Percentage of low coverage:", percentage, "%\n")
+```
+
+### Data Aggregation
+```{r}
+# Example: Aggregate coverage by genomic region
+regions <- data.frame(
+  region = c("exon1", "exon1", "exon2", "exon2"),
+  coverage = c(25, 30, 15, 20)
+)
+aggregate(coverage ~ region, data = regions, FUN = mean)
+```
+### Coverage Depth Distribution
+```{r}
+# Example: Analyze coverage distribution
+coverage_dist <- c(10, 15, 20, 25, 30, 35, 40)
+summary(coverage_dist)
+```
+
+### Low Coverage Identification
+```{r}
+# Example: Identify positions below threshold
+positions_data <- data.frame(
+  pos = 1000:1005,
+  cov = c(12, 25, 8, 30, 15, 22)
+)
+threshold <- 20
+low_positions <- positions_data[positions_data$cov < threshold, ]
+nrow(low_positions)
+```
+
+### Quality Metrics
+```{r}
+# Example: Calculate quality metrics
+total_bases <- 1000
+covered_bases <- 850
+coverage_rate <- (covered_bases / total_bases) * 100
+cat("Coverage rate:", coverage_rate, "%\n")
+```
+
+### Sample Merging
+```{r}
+# Example: Merge multiple samples
+sample1 <- data.frame(pos = c(1000, 1001), cov = c(20, 25))
+sample2 <- data.frame(pos = c(1000, 1001), cov = c(22, 28))
+merged <- merge(sample1, sample2, by = "pos", suffixes = c("_s1", "_s2"))
+print(merged)
+```
+### Additional Examples
+```{r}
+# Example 1: Basic statistics
+x <- 1:10
+mean(x)
+```
+```{r}
+# Example 2: Data frame creation
+data.frame(a = 1:3, b = 4:6)
+```
+```{r}
+# Example 3: Sum calculation
+sum(c(10, 20, 30))
+```
+```{r}
+# Example 4: String manipulation
+paste("chr", 1:3, sep = "")
+```
+```{r}
+# Example 5: Vector length
+length(c("A", "B", "C"))
+```
+```{r}
+# Example 6: Replication
+rep("sample", 3)
+```
+```{r}
+# Example 7: Subset data
+subset(data.frame(x = 1:5, y = 6:10), x > 2)
+```
+```{r}
+# Example 8: Unique values
+unique(c(1, 2, 2, 3, 3, 3))
+```
+```{r}
+# Example 9: Sort vector
+sort(c(5, 2, 8, 1, 9))
+```
+```{r}
+# Example 10
+range(c(5, 10, 15, 20))
+```
+```{r}
+# Example 11
+median(c(1, 2, 3, 4, 5))
+```
+```{r}
+# Example 12
+max(c(10, 20, 30))
+```
+```{r}
+# Example 13
+min(c(10, 20, 30))
+```
 ## Session Info
-
 ```{r}
 sessionInfo()
 ```

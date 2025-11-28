@@ -5,8 +5,9 @@
 #' @param assembly (character) Reference genome: "hg19", "hg38"
 #' @param verbose (logical) print messages
 #' @examples
+#' \dontrun{
 #' getAnnotationFiles(assembly = "hg38", verbose = TRUE)
-
+#' }
 #' @return Named list with paths to annotation files for each assembly
 #' @export
 getAnnotationFiles <- function(assembly = c("hg19", "hg38"), verbose = FALSE) {

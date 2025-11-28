@@ -11,7 +11,7 @@
 #' @author Emanuela Iovino
 #'
 #' @examples
-#' \donttest{
+#' \dontrun{
 #' # Launch Shiny app
 #' uncoverappLib.run()
 #' }
@@ -109,7 +109,7 @@ run.uncoverapp <- function(where = c("browser", "viewer", "window")) {
 #' # Show function signature
 #' args(uncoverappLib.run)
 #' 
-#' \donttest{
+#' \dontrun{
 #' # Launch app in browser
 #' uncoverappLib.run()
 #' 

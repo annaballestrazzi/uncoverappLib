@@ -18,5 +18,7 @@ Named list with paths to annotation files for each assembly
 Downloads or retrieves annotation files for the specified genome assembly
 }
 \examples{
+\dontrun{
 getAnnotationFiles(assembly = "hg38", verbose = TRUE)
+}
 }

@@ -37,7 +37,7 @@ knitr::opts_chunk$set(
 
 ### Prerequisites
 
-```{r eval=FALSE}
+```r
 # R >= 4.0.0
 # Java (for Excel export)
 
@@ -56,7 +56,7 @@ BiocManager::install(c(
 
 ### Install uncoverappLib
 
-```{r eval=FALSE}
+```r
 # From GitHub
 devtools::install_github("annaballestrazzi/uncoverappLib")
 ```
@@ -65,7 +65,7 @@ devtools::install_github("annaballestrazzi/uncoverappLib")
 
 ### 1. Setup Annotation Files
 
-```{r eval=FALSE}
+```r
 library(uncoverappLib)
 
 # Download annotation databases (run once)
@@ -77,7 +77,7 @@ check_annotations()
 
 ### 2. Launch Interactive App
 
-```{r eval=FALSE}
+```r
 # Launch in browser (recommended)
 run.uncoverapp()
 
@@ -147,7 +147,7 @@ coverage.bed     # Format: chr  start  end  depth
 
 For automated pipelines:
 
-```{r eval=FALSE}
+```r
 # Example: Batch processing
 library(uncoverappLib)
 
@@ -223,7 +223,7 @@ Formatted Excel with:
 
 Calculate disease-specific AF thresholds:
 
-```{r eval=FALSE}
+```r
 # In the "Calculate AF" tab
 # Input parameters:
 # - Disease prevalence
@@ -236,7 +236,7 @@ Calculate disease-specific AF thresholds:
 
 Assess probability of observing variants at low coverage:
 
-```{r eval=FALSE}
+```r
 # In the "Binomial Distribution" tab
 # Visualize probability distributions
 # For quality control of variant calls
@@ -275,7 +275,7 @@ Assess probability of observing variants at low coverage:
 - Try aliases (e.g., FAM161A vs FAM161A1)
 
 **"Annotation files not found"**
-```{r eval=FALSE}
+```r
 # Re-run setup
 setup_uncoverapp()
 check_annotations()

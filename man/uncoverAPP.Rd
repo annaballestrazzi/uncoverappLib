@@ -19,7 +19,7 @@ The app can be launched in different environments using the \code{where} paramet
 }
 }
 \examples{
-\donttest{
+\dontrun{
 # Launch Shiny app
 uncoverappLib.run()
 }

@@ -20,7 +20,7 @@ with older scripts that use \code{uncoverappLib.run()}.
 # Show function signature
 args(uncoverappLib.run)
 
-\donttest{
+\dontrun{
 # Launch app in browser
 uncoverappLib.run()
 

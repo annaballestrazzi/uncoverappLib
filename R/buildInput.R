@@ -66,50 +66,68 @@ utils::globalVariables(c(
 #' args(buildInput)
 #' 
 #' \dontrun{
-#' # Process BAM files
-#' buildInput(
-#'   geneList = "genes.txt",
-#'   sampleList = "samples.list",
-#'   genome = "hg38",
-#'   chromosome_notation = "chr",
-#'   type_input = "genes",
-#'   type_coverage = "bam",
-#'   outDir = tempdir()
-#' )
+#'   # Example 1: BAM file (hg19)
+#'   gene_file <- system.file("extdata", "example_genes.txt", 
+#'                            package = "uncoverappLib")
+#'   bam_file <- system.file("extdata", "example_POLG.bam",
+#'                           package = "uncoverappLib")
+#'   
+#'   if (file.exists(gene_file) && file.exists(bam_file)) {
+#'     # Create sample list for BAM
+#'     bam_list <- tempfile(fileext = ".list")
+#'     writeLines(bam_file, bam_list)
+#'     
+#'     result_bam <- buildInput(
+#'       geneList = gene_file,
+#'       sampleList = bam_list,
+#'       genome = "hg19",  # ← hg19 for BAM!
+#'       chromosome_notation = "chr",
+#'       type_input = "genes",
+#'       type_coverage = "bam",
+#'       outDir = tempdir()
+#'     )
+#'     
+#'     unlink(bam_list)
+#'   }
+#'   
+#'   # Example 2: BED coverage file (hg38)
+#'   bed_file <- system.file("extdata", "example.bed",
+#'                           package = "uncoverappLib")
+#'   
+#'   if (file.exists(gene_file) && file.exists(bed_file)) {
+#'     # Create sample list for BED
+#'     bed_list <- tempfile(fileext = ".list")
+#'     writeLines(bed_file, bed_list)
+#'     
+#'     result_bed <- buildInput(
+#'       geneList = gene_file,
+#'       sampleList = bed_list,
+#'       genome = "hg38",  # ← hg38 for BED!
+#'       chromosome_notation = "chr",
+#'       type_input = "genes",
+#'       type_coverage = "bed",
+#'       input_coord_system = "0-based",
+#'       outDir = tempdir()
+#'     )
+#'     
+#'     unlink(bed_list)
+#'   }
 #' }
+#' 
 #' \dontrun{
-#' # Example 1: Process BAM files
-#' gene_list <- system.file("extdata", "mygene.txt", package = "uncoverappLib")
-#' bam_example <- system.file("extdata", "example_POLG.bam", package = "uncoverappLib")
-#' cat(bam_example, file = "bam.list", sep = "\n")
-#' 
-#' buildInput(
-#'   geneList = gene_list, 
-#'   genome = "hg19", 
-#'   chromosome_notation = "chr",
-#'   sampleList = "bam.list",
-#'   type_input = "genes", 
-#'   outDir = tempdir(),
-#'   type_coverage = "bam",
-#'   MAPQ.min = 20,
-#'   base.quality = 20
-#' )
-#' 
-#' # Example 2: Process BED coverage files
-#' buildInput(
-#'   geneList = gene_list,
-#'   genome = "hg38",
-#'   chromosome_notation = "chr",
-#'   sampleList = "coverage.list",
-#'   type_input = "genes",
-#'   outDir = tempdir(),
-#'   type_coverage = "bed",
-#'   input_coord_system = "0-based"
-#' )
+#'   # Full example with user data
+#'   buildInput(
+#'     geneList = "my_genes.txt",
+#'     sampleList = "my_samples.list",
+#'     genome = "hg19",
+#'     chromosome_notation = "chr",
+#'     type_input = "genes",
+#'     type_coverage = "bam",
+#'     MAPQ.min = 20,
+#'     base.quality = 20,
+#'     outDir = "./results"
+#'   )
 #' }
-
-
-
 buildInput <- function(geneList, 
                        genome, 
                        chromosome_notation, 
