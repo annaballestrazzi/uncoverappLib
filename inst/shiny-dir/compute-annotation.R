@@ -165,6 +165,7 @@ intBED <- eventReactive(input$calc_annotations, {
   
   ncols <- ncol(bedB)
   
+  
   if (ncols == 19) {
     colnames(bedB) <- c('Chromo', 'start','end','REF','ALT',
                         'dbsnp','GENENAME', 'PROTEIN_ensembl',
@@ -173,6 +174,27 @@ intBED <- eventReactive(input$calc_annotations, {
                         'clinvar_MedGen_id','clinvar_OMIM_id','HGVSc_VEP','HGVSp_VEP')
   } else {
     colnames(bedB) <- paste0("V", 1:ncols)
+  }
+  # Filter annotations for selected gene only
+  if (input$filter_by == "gene" && !is.null(input$Gene_name) && input$Gene_name != "") {
+    cat("Filtering annotations for gene:", input$Gene_name, "\n")
+    cat("Before filter:", nrow(bedB), "annotations\n")
+    
+    bedB <- bedB %>%
+      dplyr::filter(GENENAME == input$Gene_name)
+    
+    cat("After filter:", nrow(bedB), "annotations for", input$Gene_name, "\n")
+    
+    if (nrow(bedB) == 0) {
+      waiter::waiter_hide()
+      shinyjs::enable("calc_annotations")
+      showNotification(
+        paste("No annotations found for gene:", input$Gene_name),
+        type = "warning",
+        duration = 5
+      )
+      return(data.frame())
+    }
   }
   
   bedB$Chromosome <- paste0("chr", bedB[[1]])
