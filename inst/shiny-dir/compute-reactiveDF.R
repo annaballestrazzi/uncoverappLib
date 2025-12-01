@@ -29,7 +29,7 @@ observeEvent(input$file1, {
 })
 
 
-observeEvent(input$pileup, {
+observeEvent(input$process_coverage, {  
   req(coverage_input())
   data_source("pileup")
 })
@@ -505,7 +505,7 @@ filtered_low <- eventReactive(input$calc_low_coverage, {
 # ============================================================================
 
 
-filtered_high <- eventReactive(input$calc_low_coverage, {
+filtered_high <- filtered_high <- reactive({
   cat("\n=== FILTERED_HIGH START ===\n")
   
   cat("Checking requirements...\n")
@@ -584,7 +584,8 @@ filtered_high <- eventReactive(input$calc_low_coverage, {
   thr <- input$coverage_co
   cat("Threshold for HIGH coverage: >", thr, "\n")
   
-  # Filter for HIGH coverage (> threshold) in ENTIRE gene region
+  # Filter for ALL coverage ABOVE threshold in ENTIRE gene region
+  # This gives us the "high coverage" regions to display in blue on the plot
   result <- dplyr::filter(df, 
                           chromosome == chr,
                           end >= start_region, 
@@ -596,7 +597,7 @@ filtered_high <- eventReactive(input$calc_low_coverage, {
   
   return(result)
   
-}, ignoreNULL = TRUE, ignoreInit = TRUE)
+})
 
 
 # ============================================================================

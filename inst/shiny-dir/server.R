@@ -74,6 +74,16 @@ server <- function (input, output, session){
   # ============================================================================
   # AUTO-SWITCH TO TAB when buttons are pressed
   # ============================================================================
+  
+  # Disable download button at start
+  shinyjs::disable("summary")
+  
+  # Handle waiter for process_coverage button
+  # Enable download button when coverage_input completes
+  observeEvent(coverage_input(), {
+    shinyjs::enable("summary")  # ✓ Abilita download solo dopo processing
+  })
+  
   observeEvent(input$calc_low_coverage, {
     updateTabsetPanel(session, "tabSet", selected = "Low-coverage positions")
   })
@@ -83,39 +93,42 @@ server <- function (input, output, session){
   })
   
   # ============================================================================
+  # GENE PLOT WAITER
+  # ============================================================================
+  
+  # Show waiter when gene plot button is pressed
+  observeEvent(input$generate_gene_plot, {
+    show_uncoverapp_waiter(
+      message = "Generating gene coverage plot...",
+      detail = "Creating Gviz tracks - This may take a minute"
+    )
+  })
+  
+  # Note: Waiter is hidden in the renderPlot output after plot completes
+  
+  # ============================================================================
   # OUTPUT: COVERAGE INPUT TABLE
   # ============================================================================
   
   output$input1 <- renderDataTable({
     options(shiny.sanitize.errors = TRUE)
     
-    # ✅ NUOVO: Waiter con logo invece della vecchia progress bar
-    show_uncoverapp_waiter(
-      message = "Preparing coverage input file...",
-      detail = "Processing BAM/BED files - This may take several minutes"
-    )
+    # Wait for the process button to be pressed
+    req(input$process_coverage > 0)
     
     start_time <- Sys.time()
     
     tryCatch({
-      validate(
-        need(try(!is.null(coverage_input())), 
-            "Please upload a file with HGNC gene names and absolute path(s) to BAM/BED files")
-      )
-      
       df <- coverage_input()
       
       end_time <- Sys.time()
-      cat(paste("⏱️ Table created in:", 
+      cat(paste("â±ï¸ Table created in:", 
                 round(difftime(end_time, start_time, units = "secs"), 1), 
                 "seconds\n"))
       
-      # Nascondi waiter
-      waiter::waiter_hide()
-      
       # Notifica successo
       showNotification(
-        paste0("✓ Input table ready: ", nrow(df), " intervals processed"),
+        paste0("âœ“ Input table ready: ", nrow(df), " intervals processed"),
         type = "message",
         duration = 3
       )
@@ -123,7 +136,6 @@ server <- function (input, output, session){
       return(df)
       
     }, error = function(e) {
-      waiter::waiter_hide()
       showNotification(
         paste("Error creating input table:", e$message),
         type = "error",
@@ -145,25 +157,20 @@ server <- function (input, output, session){
     content = function(file){
       cat("\n=== DOWNLOAD HANDLER START ===\n")
       
-      # ✅ NUOVO: Waitress con progress tracking
-      waitress <- create_uncoverapp_waitress()
-      waitress$start()
-      
       tryCatch({
-        # Step 1: Calcola statistiche (30%)
-        show_progress_step(waitress, "Calculating statistics", 30)
+        # Step 1: Calcola statistiche
+        cat("Calculating statistics...\n")
         original_data <- stat_summ()
         
         if (is.null(original_data) || nrow(original_data) == 0) {
-          waitress$close()
           showNotification("No data to export!", type = "error", duration = 5)
           return(NULL)
         }
         
         cat("  Rows:", nrow(original_data), "\n")
         
-        # Step 2: Carica OMIM (20%)
-        show_progress_step(waitress, "Loading OMIM annotations", 20)
+        # Step 2: Carica OMIM
+        cat("Loading OMIM annotations...\n")
         fourth.file <- system.file(
           "extdata",
           "sys_ndd_2025_subset.tsv",
@@ -183,16 +190,14 @@ server <- function (input, output, session){
         
         # Check for SYMBOL column
         if (!"SYMBOL" %in% colnames(original_data)) {
-          waitress$close()
           stop("ERROR: original_data missing SYMBOL column!")
         }
         if (!"SYMBOL" %in% colnames(omim_gene)) {
-          waitress$close()
           stop("ERROR: omim_gene missing SYMBOL column!")
         }
         
-        # Step 3: Merge dati (30%)
-        show_progress_step(waitress, "Merging data with annotations", 30)
+        # Step 3: Merge dati
+        cat("Merging data with annotations...\n")
         joined_data <- merge(
           original_data, 
           omim_gene, 
@@ -210,8 +215,8 @@ server <- function (input, output, session){
         omim_cols <- setdiff(colnames(joined_data), stat_cols)
         joined_data <- joined_data[, c(stat_cols, omim_cols)]
         
-        # Step 4: Scrivi file (20%)
-        show_progress_step(waitress, "Writing summary file", 20)
+        # Step 4: Scrivi file
+        cat("Writing file...\n")
         write.table(
           joined_data, 
           file, 
@@ -222,11 +227,9 @@ server <- function (input, output, session){
           na = "NA"
         )
         
-        waitress$close()
-        
         # Notifica successo
         showNotification(
-          "✓ Statistical summary created successfully!",
+          "âœ“ Statistical summary created successfully!",
           type = "message",
           duration = 3
         )
@@ -235,7 +238,6 @@ server <- function (input, output, session){
         cat("File saved:", file, "\n\n")
         
       }, error = function(e) {
-        waitress$close()
         showNotification(
           paste("Download error:", e$message),
           type = "error",
@@ -275,41 +277,25 @@ server <- function (input, output, session){
   
     return(data)
   })
-
-
   # ============================================================================
   # OUTPUT: ALL GENE COVERAGE PLOT
   # ============================================================================
   output$all_gene <- renderPlot({
-    validate(
-      need(ncol(mydata()) != "0", "Please upload your file")
-    )
+    cat("\n=== RENDER PLOT TRIGGERED ===\n")
     
-    # ✅ NUOVO: Waitress con progress REALE
-    waitress <- create_uncoverapp_waitress()
-    waitress$start()
+    # Use p1() from compute-plots.R which handles everything:
+    # - Button press detection via eventReactive
+    # - Data validation
+    # - Track creation
+    # - Waiter show/hide
+    # - Plot rendering
+    p1()
     
-    tryCatch({
-      show_progress_step(waitress, "Validating data", 20)
-      req(coord(), Chromosome())
-      
-      show_progress_step(waitress, "Creating data tracks", 30)
-      # Qui il plot si genera davvero
-      
-      show_progress_step(waitress, "Creating genome tracks", 20)
-      
-      show_progress_step(waitress, "Rendering plot", 30)
-      plot_result <- p1()
-      
-      waitress$close()
-      return(plot_result)
-      
-    }, error = function(e) {
-      waitress$close()
-      showNotification(paste("Plot error:", e$message), type = "error")
-      return(NULL)
-    })
-  })
+    cat("PLOT RENDERED TO UI!\n\n")
+    
+  }, height = 400, width = 800)
+
+  # Reduced from 800x1200
   # output$all_gene <- renderPlot({
   #   validate(
   #     need(ncol(mydata()) != "0", "Unrecognized data set: Please
@@ -494,7 +480,7 @@ server <- function (input, output, session){
   # ============================================================================
 
   output$uncoverPosition <- DT::renderDT({
-    # ✅ Remove Gene_name requirement - maxAF works with any filter!
+    # âœ… Remove Gene_name requirement - maxAF works with any filter!
     validate(
       need(!is.null(mydata()) && ncol(mydata()) > 0,
            "Please load your coverage file first")

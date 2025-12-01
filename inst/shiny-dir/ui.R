@@ -337,8 +337,15 @@ myHome <- function() {
                tabPanel("Low-coverage positions", DT::DTOutput("text_cv")),
                tabPanel("UCSC gene", shinycssloaders::withSpinner(DT::DTOutput('ccg'))),
                tabPanel("Gene coverage",
+                        actionButton("generate_gene_plot", 
+                                      "Generate Gene Coverage Plot",
+                                      icon = icon("chart-area"),
+                                      style = "color: #fff; background-color: #3498db; 
+                                              border-color: #2980b9; width: 100%; 
+                                              margin-bottom: 15px; font-weight: bold;"),
                         shinycssloaders::withSpinner(plotOutput("all_gene")),
-                        DT::DTOutput('df.l')),
+                        DT::DTOutput('df.l')
+                ),
                tabPanel("Annotations on low-coverage positions",
                         helpText(em("dbSNP-annotation collects all consequences found in VEP-defined canonical transcripts")),
                         shinycssloaders::withSpinner(DT::DTOutput("uncover_position"))),

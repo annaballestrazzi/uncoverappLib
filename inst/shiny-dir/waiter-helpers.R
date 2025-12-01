@@ -17,8 +17,8 @@ show_uncoverapp_waiter <- function(
   
   # Logo uncoverAPP (SVG con sfondo trasparente)
   # Il logo deve essere in inst/www/logo.svg
-  logo_html <- tags$div(
-    tags$img(
+  logo_html <- shiny::tags$div(
+    shiny::tags$img(
       src = "logo.svg",  # Path relativo a www/
       alt = "uncoverAPP",
       style = sprintf(
@@ -28,7 +28,7 @@ show_uncoverapp_waiter <- function(
     )
   )
   
-  waiter_html <- tagList(
+  waiter_html <- shiny::tagList(
     # Logo
     logo_html,
     
@@ -36,11 +36,11 @@ show_uncoverapp_waiter <- function(
     waiter::spin_folding_cube(),
     
     # Messaggio principale
-    h3(message, style = "color: white; margin-top: 30px; font-weight: 600;"),
+    shiny::h3(message, style = "color: white; margin-top: 30px; font-weight: 600;"),
     
     # Dettaglio opzionale
     if (!is.null(detail)) {
-      p(detail, style = "color: #E8F4F8; font-size: 16px; margin-top: 10px;")
+      shiny::p(detail, style = "color: #E8F4F8; font-size: 16px; margin-top: 10px;")
     }
   )
   
@@ -72,15 +72,8 @@ create_uncoverapp_waitress <- function(
     infinite = infinite
   )
   
-  # Personalizza colore della progress bar (blu uncoverAPP)
-  waitress$notify_bar_update <- function(value) {
-    session$sendCustomMessage("waitress-update", list(
-      el = waitress$id,
-      value = value,
-      color = "#3498DB"  # Blu uncoverAPP
-    ))
-  }
-  
+  # Return the waitress object without modifying it
+  # (customization can be done when calling the methods)
   return(waitress)
 }
 
@@ -92,7 +85,7 @@ create_uncoverapp_waitress <- function(
 #' @param increment Progress increment (percentage)
 show_progress_step <- function(waitress, step_name, increment) {
   waitress$inc(increment)
-  waitress$notify(paste0("⏳ ", step_name))
+  waitress$notify(paste0("â³ ", step_name))
   Sys.sleep(0.1)  # Brief pause for UX
 }
 
@@ -123,7 +116,7 @@ generate_plot_with_progress <- function(plot_function, steps = NULL) {
       step_idx <- step_idx + 1
       show_progress_step(waitress, step_name, steps[[step_name]])
       
-      # Se è l'ultimo step, genera il plot
+      # Se Ã¨ l'ultimo step, genera il plot
       if (step_idx == length(steps)) {
         result <- plot_function()
       }
@@ -169,7 +162,7 @@ download_with_progress <- function(download_function, filename, steps = NULL) {
     
     waitress$close()
     showNotification(
-      paste0("✓ File saved: ", basename(filename)), 
+      paste0("âœ“ File saved: ", basename(filename)), 
       type = "message", 
       duration = 3
     )

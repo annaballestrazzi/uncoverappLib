@@ -262,6 +262,17 @@ for_bed <- reactive({
 coverage_input <- eventReactive(input$process_coverage, {
     cat("\n=== PROCESS COVERAGE BUTTON PRESSED ===\n")
     
+    # Show waiter FIRST
+    show_uncoverapp_waiter(
+      message = "Processing coverage files...",
+      detail = "This may take several minutes for large datasets"
+    )
+    
+    # Ensure waiter is hidden even if error occurs
+    on.exit(waiter::waiter_hide(), add = TRUE)
+    
+    # Validazione iniziale
+    
     # Validazione iniziale
     if (is.null(gene_list())) {
         showNotification("Please upload a gene list file first!", 
@@ -497,6 +508,11 @@ coverage_input <- eventReactive(input$process_coverage, {
     attr(pp, "coordinate_system") <- "1-based"
     attr(pp, "trimmed_to_targets") <- TRUE
     attr(pp, "original_input_system") <- input_coord_system
+    
+    cat("\n✓ Coverage processing completed successfully!\n")
+    cat(paste("  Total intervals:", nrow(pp), "\n"))
+    cat(paste("  Total genes:", length(unique(pp$SYMBOL)), "\n\n"))
+    
     return(pp)
 })
 
@@ -514,6 +530,9 @@ stat_summ <- reactive({
     if (is.null(gene_list())) return(NULL)
     if (is.null(list_coverage())) return(NULL)
     if (!is.null(no_entrID()) && nrow(no_entrID()) != 0) return(no_entrID())
+    
+    # ✅ FIX: Assicurati che coverage_input sia stato calcolato
+    req(coverage_input())
 
     cat("\n=== STATISTICS CALCULATION ===\n")
     ppinp <- as.data.frame(coverage_input())
@@ -629,5 +648,3 @@ stat_summ <- reactive({
     }
     return(out_r)
 })
-
-

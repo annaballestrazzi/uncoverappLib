@@ -28,7 +28,8 @@ Checking for recommended DESCRIPTION fields... OK
 Checking for Bioconductor software dependencies... OK
 Checking for pinned package versions in DESCRIPTION... OK
 Checking .Rbuildignore... OK
-Checking for stray BiocCheck output folders... OK
+Checking for stray BiocCheck output folders...
+Remove 'uncoverappLib.BiocCheck' from the package directory
 Checking for inst/doc folders... OK
 Checking vignette directory... OK
 Checking package installation calls in R code... OK

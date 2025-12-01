@@ -12,23 +12,45 @@ tryObserve <- function(x) {
 
 
 coord= eventReactive(input$ucsc_lookup,{
+  cat("\n=== COORD() REACTIVE TRIGGERED ===\n")
+  
   disable("ucsc_lookup")
   shinyjs::show("text1")
   Sys.sleep(0.1)
+  
+  cat("Looking up gene:", input$Gene_name, "\n")
+  
   my_gene_name=OrganismDbi::select(org.Hs.eg.db,
                                    key= input$Gene_name,
                                    columns=c("ENTREZID","GENENAME", "ENSEMBL"),
                                    keytype="SYMBOL")
+  
   ID=my_gene_name$ENTREZID
-  if (is.null(ID))
+  
+  if (is.null(ID) || length(ID) == 0) {
+    cat("ERROR: No ENTREZID found for gene:", input$Gene_name, "\n")
+    shinyjs::enable("ucsc_lookup")
+    shinyjs::hide("text1")
     return(NULL)
+  }
+  
+  cat("Found ENTREZID:", ID, "\n")
+  
   all_gene= data.frame(genes(txdb()))
   pre= do.call(rbind, lapply(ID, function(x) data.frame(
     subset(all_gene, all_gene$gene_id == x), stringsAsFactors = FALSE)))
+  
   colnames(pre)[6]= 'ENTREZID'
   info= merge(pre, my_gene_name)
+  
+  cat("Gene coordinates:\n")
+  print(head(info[, c("seqnames", "start", "end", "SYMBOL")], 3))
+  
   shinyjs::enable("ucsc_lookup")
   shinyjs::hide("text1")
+  
+  cat("=== COORD() COMPLETE ===\n\n")
+  
   return(info)
 })
 
@@ -53,11 +75,31 @@ observeEvent(input$ucsc_lookup, {
 })
 # Auto-update Chromosome input when lookup button is pressed
 observeEvent(input$ucsc_lookup, {
-  req(coord())
-  x <- as.data.frame(coord())
+  cat("\n=== AUTO-UPDATE CHROMOSOME OBSERVER TRIGGERED ===\n")
+  
+  # Wait a moment for coord() to compute
+  Sys.sleep(0.2)
+  
+  coord_data <- coord()
+  
+  if (is.null(coord_data)) {
+    cat("WARNING: coord() returned NULL, cannot auto-update chromosome\n")
+    return()
+  }
+  
+  if (nrow(coord_data) == 0) {
+    cat("WARNING: coord() returned empty dataframe\n")
+    return()
+  }
+  
+  x <- as.data.frame(coord_data)
   Chrom <- as.character(x$seqnames[1])
-  cat("Auto-updating Chromosome input to:", Chrom, "\n")
+  
+  cat("✅ Auto-updating Chromosome input to:", Chrom, "\n")
+  
   updateTextInput(session, "Chromosome", value = Chrom)
+  
+  cat("Chromosome input updated successfully\n\n")
 })
 
 
