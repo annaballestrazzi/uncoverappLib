@@ -208,9 +208,7 @@ p1 <- eventReactive(input$generate_gene_plot, {
       col.baseline = "black",
       lwd.baseline = 1,
       sizes = c(0.5, 1, 3.5, 3.5),
-      # background.title = "gray50",  # <-- Grigio scuro
-      # col.title = "white",          # <-- Scritte bianche
-      col.axis = "black",
+      col.axis = "gray50",
       cex.axis = 0.8
     )
   }, error = function(e) {
