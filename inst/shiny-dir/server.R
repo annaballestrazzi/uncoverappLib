@@ -375,6 +375,7 @@ server <- function (input, output, session){
       # Stili
       negStyle <- openxlsx::createStyle(fontColour = "#9C0006", bgFill = "#FFC7CE")
       posStyle <- openxlsx::createStyle(fontColour = "#006100", bgFill = "#C6EFCE")
+      yellowStyle <- openxlsx::createStyle(fontColour = "#000000", bgFill = "#FFFFE0")  # Light yellow
       highlighted <- openxlsx::createStyle(fgFill = "yellow")
       hs <- openxlsx::createStyle(textDecoration = "BOLD", fontColour = "#FFFFFF",
                         fontSize=12,
@@ -399,15 +400,22 @@ server <- function (input, output, session){
         openxlsx::conditionalFormatting(wb, "Variants", cols = col_MutationAssessor,
                               rows = 2:(nrows + 1), rule = '=="H"', style = negStyle)
         openxlsx::conditionalFormatting(wb, "Variants", cols = col_MutationAssessor,
-                              rows = 2:(nrows + 1), rule = '!="H"', style = posStyle)
-      }
-      
+                              rows = 2:(nrows + 1), rule = '=="M"', style = yellowStyle)
+                # Use dynamic column reference
+        col_letter <- LETTERS[col_MutationAssessor]
+        openxlsx::conditionalFormatting(wb, "Variants", cols = col_MutationAssessor,
+                              rows = 2:(nrows + 1), 
+                              rule = paste0('AND($', col_letter, '2<>"H",$', col_letter, '2<>"M")'), 
+                              style = posStyle)
+              }
+              
       # Conditional formatting: M_CAP
       if (length(col_M_CAP) > 0) {
         openxlsx::conditionalFormatting(wb, "Variants", cols = col_M_CAP,
                               rows = 2:(nrows + 1), rule = '=="D"', style = negStyle)
         openxlsx::conditionalFormatting(wb, "Variants", cols = col_M_CAP,
                               rows = 2:(nrows + 1), rule = '!="D"', style = posStyle)
+
       }
       
       # Conditional formatting: CADD_PHED
@@ -421,9 +429,9 @@ server <- function (input, output, session){
       # Conditional formatting: AF_gnomAD
       if (length(col_AF_gnomAD) > 0) {
         openxlsx::conditionalFormatting(wb, "Variants", cols = col_AF_gnomAD,
-                              rows = 2:(nrows + 1), rule = "<=0.5", style = negStyle)
+                              rows = 2:(nrows + 1), rule = "<0.5", style = negStyle)
         openxlsx::conditionalFormatting(wb, "Variants", cols = col_AF_gnomAD,
-                              rows = 2:(nrows + 1), rule = ">0.5", style = posStyle)
+                              rows = 2:(nrows + 1), rule = ">=0.5", style = posStyle)
       }
       
       # Conditional formatting: ClinVar

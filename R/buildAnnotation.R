@@ -426,7 +426,12 @@ buildAnnotation <- function(sample_data,
     
     cat("Important variants:", sum(intersect_df$highlight_important, na.rm = TRUE), "\n")
   }
-  
+
+  intersect_df_export <- intersect_df
+  if ("highlight_important" %in% colnames(intersect_df_export)) {
+    intersect_df_export$highlight_important <- NULL
+  }
+
   cat(paste("Overlap computation took:",
             round(difftime(Sys.time(), overlap_time, units = "secs"), 2),
             "seconds\n\n"))
@@ -440,8 +445,8 @@ buildAnnotation <- function(sample_data,
   
   cat("=== STEP 9: SAVING OUTPUT ===\n")
   
-  write.table(intersect_df, output_intersect, 
-              sep = "\t", quote = FALSE, row.names = FALSE, col.names = TRUE)
+  write.table(intersect_df_export, output_intersect, 
+            sep = "\t", quote = FALSE, row.names = FALSE, col.names = TRUE)
   cat("Saved intersect output:", output_intersect, "\n")
   
   if (grepl("\\.xlsx?$", output_formatted, ignore.case = TRUE)) {
@@ -450,8 +455,7 @@ buildAnnotation <- function(sample_data,
   
   wb <- openxlsx::createWorkbook()
   openxlsx::addWorksheet(wb, "Low Coverage Variants")
-  openxlsx::writeData(wb, "Low Coverage Variants", intersect_df)
-  
+  openxlsx::writeData(wb, "Low Coverage Variants", intersect_df_export)  
   # ============================================================================
   # HEADER STYLE
   # ============================================================================
@@ -468,13 +472,13 @@ buildAnnotation <- function(sample_data,
   # Freeze header + auto-width
   openxlsx::freezePane(wb, "Low Coverage Variants", firstRow = TRUE)
   openxlsx::setColWidths(wb, "Low Coverage Variants", 
-                         cols = 1:ncol(intersect_df), widths = "auto")
+                       cols = 1:ncol(intersect_df_export), widths = "auto")
   
   # ============================================================================
   # CONDITIONAL FORMATTING (FAST - NO LOOPS!)
   # ============================================================================
   
-  nrows <- nrow(intersect_df)
+  nrows <- nrow(intersect_df_export)
   
   # Styles (create once, reuse)
   redStyle <- openxlsx::createStyle(fgFill = "#FFB6C1")    # Light red/pink
@@ -484,8 +488,8 @@ buildAnnotation <- function(sample_data,
   # ──────────────────────────────────────────────────────────────────────────
   # ClinVar: Red if pathogenic, Green if benign
   # ──────────────────────────────────────────────────────────────────────────
-  if ("ClinVar" %in% colnames(intersect_df)) {
-    clinvar_col <- which(colnames(intersect_df) == "ClinVar")
+  if ("ClinVar" %in% colnames(intersect_df_export)) {
+    clinvar_col <- which(colnames(intersect_df_export) == "ClinVar")
     
     # Red for pathogenic (NOT ".")
     openxlsx::conditionalFormatting(
@@ -556,11 +560,12 @@ buildAnnotation <- function(sample_data,
     )
     
     # Green for Low/Neutral (not H or M)
+    col_letter <- LETTERS[ma_col]
     openxlsx::conditionalFormatting(
       wb, "Low Coverage Variants",
       cols = ma_col,
       rows = 2:(nrows + 1),
-      rule = 'AND($A2<>"H", $A2<>"M")',  # Not H and not M
+      rule = paste0('AND($', col_letter, '2<>"H", $', col_letter, '2<>"M")'),
       style = greenStyle
     )
   }
@@ -616,23 +621,33 @@ buildAnnotation <- function(sample_data,
   }
   
   # ──────────────────────────────────────────────────────────────────────────
-  # BONUS: Highlight important variants (entire row in yellow)
+  # BONUS: Highlight important variants
   # ──────────────────────────────────────────────────────────────────────────
-  if ("highlight_important" %in% colnames(intersect_df)) {
-    important_rows <- which(intersect_df$highlight_important == TRUE)
+  if (all(c("MutationAssessor", "ClinVar", "AF_gnomAD", "start", "end") %in% colnames(intersect_df_export))) {
+    
+    # Ricalcola righe importanti da intersect_df_export
+    important_rows <- which(
+      grepl("H|M", intersect_df_export$MutationAssessor) & 
+      intersect_df_export$ClinVar != "." & 
+      !is.na(intersect_df_export$AF_gnomAD) & 
+      intersect_df_export$AF_gnomAD < 0.5
+    )
     
     if (length(important_rows) > 0) {
-      highlightStyle <- openxlsx::createStyle(fgFill = "#FFFF00")  # Yellow
+      col_start <- which(colnames(intersect_df_export) == "start")
+      col_end <- which(colnames(intersect_df_export) == "end")
       
-      # Highlight entire rows (only first few columns to avoid slowdown)
-      for (row in important_rows + 1) {  # +1 for header
-        openxlsx::addStyle(wb, "Low Coverage Variants", 
-                           highlightStyle, 
-                           rows = row, 
-                           cols = 1:min(5, ncol(intersect_df)),  # Only first 5 cols
-                           gridExpand = TRUE,
-                           stack = TRUE)
-      }
+      yellowHighlight <- openxlsx::createStyle(fgFill = "#FFFF00")
+      
+      openxlsx::addStyle(
+        wb, "Low Coverage Variants", 
+        style = yellowHighlight,
+        rows = important_rows + 1,
+        cols = c(col_start, col_end),
+        gridExpand = TRUE
+      )
+      
+      cat("Highlighted", length(important_rows), "important variants\n")
     }
   }
   

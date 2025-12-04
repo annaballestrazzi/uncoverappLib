@@ -680,11 +680,21 @@ if (type_coverage == "bam") {
                 round(difftime(Sys.time(), start_time, units = "secs"), 2),
                 "seconds\n"))
   
-  # ==============================================================================
-  # STEP 6: ADD OPTIONAL ANNOTATIONS
-  # ==============================================================================
-  
-  if (!is.null(annotation_file)) {
+# ==============================================================================
+# STEP 6: ADD OPTIONAL ANNOTATIONS
+# ==============================================================================
+
+# Se annotation_file è NULL, usa il file default dal package
+if (is.null(annotation_file)) {
+  annotation_file <- system.file(
+    "extdata",
+    "sys_ndd_2025_subset.tsv",
+    package = "uncoverappLib"
+  )
+  message("Using default annotation file from package")
+}
+
+if (!is.null(annotation_file) && file.exists(annotation_file)) {
     message("=== STEP 6: ADDING ANNOTATIONS ===")
     start_time <- Sys.time()
     
