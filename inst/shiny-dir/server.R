@@ -128,7 +128,7 @@ server <- function (input, output, session){
       
       # Notifica successo
       showNotification(
-        paste0("âœ“ Input table ready: ", nrow(df), " intervals processed"),
+        paste0("Input table ready: ", nrow(df), " intervals processed"),
         type = "message",
         duration = 3
       )
@@ -229,7 +229,7 @@ server <- function (input, output, session){
         
         # Notifica successo
         showNotification(
-          "âœ“ Statistical summary created successfully!",
+          "Statistical summary created successfully!",
           type = "message",
           duration = 3
         )

@@ -483,13 +483,13 @@ filtered_low <- eventReactive(input$calc_low_coverage, {
   
   if (!is.null(result) && nrow(result) > 0) {
     showNotification(
-      paste("✓ Found", nrow(result), "low coverage positions"),
+      paste("Found", nrow(result), "low coverage positions"),
       type = "message",
       duration = 5
     )
   } else {
     showNotification(
-      "⚠ No low coverage positions found with current filters",
+      "No low coverage positions found with current filters",
       type = "warning",
       duration = 5
     )

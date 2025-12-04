@@ -78,6 +78,13 @@ preprocess <- function() {
                        fluidPage(
                          sidebarLayout(
                       sidebarPanel(
+                        tags$style(HTML("
+                          .btn-file { 
+                            height: 34px !important; 
+                            padding: 6px 12px !important; 
+                            font-size: 14px !important; 
+                          }
+                        ")),
                         shiny::selectInput("Genome",
                                            label = "Reference Genome",
                                            choices = c("hg19",
@@ -184,13 +191,18 @@ preprocess <- function() {
                         helpText(em("Click to generate the input table from your files")),
                         
                         hr(),
-                        downloadButton("summary", "Download Statistical Summary", class = "btn-primary",
-                                        style='color: #fff !important; background-color: #27ae60;
-                                        border-color: #fff;
-                                        padding: 15px 14px 15px 14px;
-                                        margin: 15px 5px 5px 5px;
-                                        font-size: 14px !important;
-                                        font-weight: bold !important;')
+                        downloadButton("summary", 
+                                        HTML("Download<br/>Statistical Summary"),
+                                        class = "btn-primary",
+                                        style = 'color: #fff !important; 
+                                                  background-color: #27ae60 !important;
+                                                  border-color: #27ae60 !important;
+                                                  width: 100%;
+                                                  margin-bottom: 10px;
+                                                  padding: 10px 12px;
+                                                  font-size: 14px !important;
+                                                  font-weight: bold !important;
+                                                  text-align: center;')  
                       ),
                       shiny::mainPanel(
                         tabsetPanel(

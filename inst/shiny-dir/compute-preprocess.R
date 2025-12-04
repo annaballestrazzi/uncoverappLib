@@ -509,7 +509,7 @@ coverage_input <- eventReactive(input$process_coverage, {
     attr(pp, "trimmed_to_targets") <- TRUE
     attr(pp, "original_input_system") <- input_coord_system
     
-    cat("\n✓ Coverage processing completed successfully!\n")
+    cat("\nSUCCESS: Coverage processing completed successfully!\n")
     cat(paste("  Total intervals:", nrow(pp), "\n"))
     cat(paste("  Total genes:", length(unique(pp$SYMBOL)), "\n\n"))
     

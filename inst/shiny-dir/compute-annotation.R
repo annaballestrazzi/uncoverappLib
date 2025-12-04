@@ -340,13 +340,13 @@ if (nrow(bedA_norm) > 10000 || nrow(bedB_norm) > 10000) {
   
   if (!is.null(intersect_df) && nrow(intersect_df) > 0) {
     showNotification(
-      paste("✓ Annotation complete:", nrow(intersect_df), "variants annotated"),
+      paste("Annotation complete:", nrow(intersect_df), "variants annotated"),
       type = "message",
       duration = 5
     )
   } else {
     showNotification(
-      "⚠ No variants found in annotation database",
+      "No variants found in annotation database",
       type = "warning",
       duration = 5
     )
