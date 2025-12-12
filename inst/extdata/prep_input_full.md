@@ -75,16 +75,16 @@ We recommend using the `buildInput()` function in R console before launching the
 **Load input filtering file:**
 Upload one of:
 - **Gene list** (`.txt`): HGNC gene symbols, one per line
-  ```
+```
   BRCA1
   BRCA2
   TP53
-  ```
+```
 - **Target BED** (`.bed`): Genomic regions with 4 columns
-  ```
+```
   chr17    41196312    41277500    BRCA1
   chr13    32889617    32973809    BRCA2
-  ```
+```
 
 **Choose the type of your input file:**
 - `List of gene names`: For gene list input
@@ -389,16 +389,346 @@ After generating the coverage BED file:
    - Filter mode (gene/chromosome/region/all)
 4. **Calculate Low Coverage:** Click button to identify gaps
 5. **Calculate Annotations:** Click button to retrieve variant annotations from dbNSFP
-6. **Explore results:**
-   - View annotated variants table
-   - Use maxAF calculator (for gene-specific analysis)
-   - Use binomial probability calculator
-   - Generate Gviz plots
-7. **Download results:** Export annotated Excel files
+6. **Explore results in multiple tabs:**
+   - **"bed file" tab**: View raw input data
+   - **"Low-coverage positions" tab**: See all positions below threshold
+   - **"UCSC gene" tab**: Verify gene coordinates (gene mode only)
+   - **"Gene coverage" tab**: Generate Gviz plot (gene mode only)
+   - **"Annotations on low-coverage positions" tab**: View variant annotations with pathogenicity predictions
+7. **Use analysis tools:**
+   - **maxAF calculator** (tab "Calculate AF by allele frequency app"): Works with any filter mode (gene, chromosome, region, or all chromosomes)
+   - **Binomial probability calculator** (tab "Binomial distribution"): Calculate probability of detecting variants at low coverage positions
+   - **Generate gene coverage plot**: Create visual representation of coverage along gene structure (gene mode only)
+8. **Download results:** Export annotated Excel files with conditional formatting
 
 For detailed examples, see:
 ```r
 vignette("uncoverapp-tutorial", package = "uncoverappLib")
+```
+
+---
+
+## 📊 Gene Coverage Visualization
+
+### Generate Gene Coverage Plot
+
+The **Gene Coverage Plot** button creates an interactive Gviz visualization showing coverage tracks for a specific gene.
+
+**When available:**
+- Only in **"Gene name"** filter mode
+- After verifying gene coordinates with "Lookup UCSC Gene"
+- After calculating low coverage regions
+- Requires valid gene in selected genome
+
+**What it shows:**
+1. **Chromosome ideogram** (top): Gene location on chromosome
+2. **Gene model track**: Exons, introns, transcript structure
+3. **Coverage track (blue)**: High coverage regions (above threshold)
+4. **Coverage track (red)**: Low coverage regions (below threshold)
+5. **Genome axis**: Genomic coordinates
+
+---
+
+### Complete Workflow for Gene Coverage Plot
+
+**🔴 IMPORTANT: Follow ALL steps in order**
+
+#### Step 1: Configure Gene Filter
+1. Go to **Coverage Analysis** page
+2. Load your BED file using **"Select input file"** button
+3. Click **"load input file"** button
+4. Set **"Filter By"** = **"Gene name"**
+5. Enter gene symbol in **"Gene name"** field (e.g., `BRCA1`, `POLG`, `TP53`)
+
+#### Step 2: Verify Gene Coordinates
+6. Click **"Lookup UCSC Gene"** button (🔍 search icon)
+7. Switch to **"UCSC gene"** tab
+8. **Verify** the gene exists and coordinates are correct
+   - Check chromosome, start, end positions
+   - Confirm correct genome (hg19/hg38)
+   - If table is empty → gene not found, check spelling/genome
+
+#### Step 3: Calculate Coverage
+9. Return to main view (first tab)
+10. Set your **"Coverage threshold"** (e.g., 20)
+11. Enter **"Sample"** name exactly as in column header (e.g., `count_patient_001`)
+12. Click **"Calculate Low Coverage Regions"** button (green)
+13. Wait for processing → switches to **"Low-coverage positions"** tab
+
+#### Step 4: Generate Plot
+14. Navigate to **"Gene coverage"** tab
+15. Click **"Generate Gene Coverage Plot"** button (blue)
+16. **Wait 1-2 minutes** for plot generation
+17. Gviz plot appears showing coverage along gene structure
+
+---
+
+### Example Workflow (POLG gene)
+```
+Step-by-step example with real data:
+
+1. Load file: example_coverage.bed
+2. Click "load input file"
+3. Filter By = "Gene name"
+4. Gene name = "POLG"
+5. Reference Genome = "hg19"
+6. Click "Lookup UCSC Gene" → Verify POLG found
+7. Go to "UCSC gene" tab → See coordinates chr15:89859516-89876985
+8. Return to first tab
+9. Coverage threshold = "20"
+10. Sample = "count_example_POLG.bam"
+11. Click "Calculate Low Coverage Regions"
+12. Wait , "Low-coverage positions" tab shows results
+13. Go to "Gene coverage" tab
+14. Click "Generate Gene Coverage Plot"
+15. Wait , Plot appears with blue/red coverage tracks
+```
+
+---
+
+### Interpreting the Plot
+
+**Coverage Tracks:**
+- **Blue regions**: Coverage **above** threshold (adequate coverage)
+  - Good for variant calling
+  - No validation needed
+- **Red regions**: Coverage **below** threshold (potential gaps)
+  - May miss variants
+  - Consider Sanger sequencing validation
+  - Check if these are critical exons
+
+**Gene Structure:**
+- **Thick boxes**: Exons (coding regions)
+- **Thin lines**: Introns (non-coding)
+- **Direction**: Arrows show strand orientation
+- **Transcript**: Usually canonical/longest transcript shown
+
+**Common Patterns:**
+- **First exon low**: Common due to GC content or capture design
+- **Last exon low**: May be 3' UTR (check if coding)
+- **Random gaps**: Technical issues, poor capture, repeats
+- **Entire gene low**: Wrong sample? Check sample name
+
+**Use Cases:**
+- Identify which specific exons have insufficient coverage
+- Prioritize regions for Sanger sequencing validation
+- Assess systematic coverage issues across gene
+- Generate publication-quality figures
+- Compare coverage patterns between samples
+
+---
+
+### Troubleshooting Plot Generation
+
+**"No plot appears after clicking button"**
+- Did you complete **ALL steps** including "Lookup UCSC Gene"?
+- Check gene name spelling (case-sensitive for some systems)
+- Verify gene exists in selected genome (hg19 vs hg38)
+- Check "Low-coverage positions" tab has data
+- Wait longer (large genes take 1-2 minutes)
+
+**"Gene not found" error**
+- Click "Lookup UCSC Gene" first to verify gene exists
+- Check correct genome selected (hg19/hg38)
+- Try gene aliases (e.g., "PARK2" vs "PRKN")
+- Verify gene is in UCSC database for selected genome
+
+**"Plot is empty or all red"**
+- Check sample name is correct (must match column header exactly)
+- Verify coverage threshold is reasonable (try threshold = 1)
+- Check if gene has any coverage data in your file
+- May indicate poor sequencing of this gene
+
+**"Plot generation is very slow"**
+- Large genes (>100kb) take longer
+- First plot generation loads packages (slower)
+- Subsequent plots are faster
+- Consider checking smaller genes first
+
+**"Cannot export plot"**
+- Right-click on plot → "Save image as..."
+- Save as PNG format
+- If right-click doesn't work, use screenshot tool
+- Plot size is fixed (800x400 pixels)
+
+---
+
+### Plot Limitations
+
+**Cannot use plot with:**
+- "Chromosome" filter mode (use gene mode only)
+- "Region coordinates" filter mode (use gene mode only)
+- "All chromosomes" mode (use gene mode only)
+- Multiple genes simultaneously (one gene at a time)
+
+**Limitations:**
+- Only shows canonical/longest transcript
+- Cannot zoom or pan (automatic gene boundaries)
+- Cannot customize colors or tracks
+- Large genes (>100kb) may be slow
+- Requires sufficient coverage data in gene region
+
+**Works best with:**
+- Single gene analysis
+- Genes < 100kb
+- Adequate coverage depth (mean >10x)
+- Validated gene name (via "Lookup UCSC Gene")
+
+---
+
+### Tips and Best Practices
+
+**Before generating plot:**
+1.  **Always** click "Lookup UCSC Gene" first
+2.  Verify gene coordinates in "UCSC gene" tab
+3.  Ensure "Low-coverage positions" calculation completed
+4.  Double-check sample name matches exactly
+
+**For best results:**
+- Use official HGNC gene symbols (e.g., `BRCA1` not `Brca1`)
+- Start with small genes to test workflow
+- Generate plots after confirming gene has coverage
+- Export plots immediately after generation (they don't save automatically)
+
+**Export options:**
+- Right-click plot → "Save image as..." (PNG recommended)
+- Use for publications, reports, presentations
+- Include in Sanger sequencing request forms
+- Share with clinical team to discuss low-coverage regions
+
+---
+
+### Understanding the Tabs
+
+After loading your coverage file, the interface shows multiple tabs with different information:
+
+#### 1. **bed file**
+- Shows the **raw input data** (first 10,000 rows displayed)
+- Columns: chromosome, start, end, coverage for each sample
+- Use to verify:
+  - Data loaded correctly
+  - Sample names are correct (important for plot generation!)
+  - Coverage values look reasonable
+  - Chromosome notation matches expectations
+
+#### 2. **Low-coverage positions**
+- Appears after clicking **"Calculate Low Coverage Regions"**
+- Shows **all genomic positions** below your coverage threshold
+- Filtered by your selection (gene/chromosome/region/all)
+- **Empty table = no gaps found** (indicates good coverage!)
+- Contains: chromosome, start, end, coverage value
+- **Required** before generating gene plot
+
+#### 3. **UCSC gene**
+- Shows **gene coordinates** from UCSC database
+- Appears after clicking **"Lookup UCSC Gene"** button
+- **CRITICAL** : You must click "Lookup UCSC Gene" and verify results here before generating plot
+- Contains: chromosome, txStart, txEnd, name2 (gene symbol), strand
+- Use to verify:
+  - Gene exists in selected genome (hg19/hg38)
+  - Correct gene coordinates
+  - Transcript information
+  - Gene boundaries match expectations
+
+**Example output:**
+```
+name          chrom   strand  txStart    txEnd      name2
+uc010whl.2    chr15   +       89859516   89876985   POLG
+```
+
+#### 4. **Gene coverage** (Gene mode only)
+- Contains the **"Generate Gene Coverage Plot"** button
+- Only active after completing Steps 1-3 (see workflow above)
+- Shows **Gviz visualization** after clicking button
+- Displays:
+  - Gene model with exons/introns
+  - High coverage regions (blue)
+  - Low coverage regions (red)
+  - Genomic coordinates
+- Can be exported as image (right-click)
+
+#### 5. **Annotations on low-coverage positions**
+- Appears after clicking **"Calculate Annotations on Low Coverage"**
+- Shows **variant annotations** from dbNSFP database for low coverage positions
+- Contains critical columns:
+  - **ClinVar**: Pathogenicity classification
+  - **CADD_PHED**: Deleteriousness score (>20 = likely deleterious)
+  - **MutationAssessor**: Functional impact (H = High, M = Medium)
+  - **AF_gnomAD**: Population allele frequency
+  - **dbSNP**: Variant identifier
+  - **GENENAME**: Gene symbol
+  - **HGVSc/HGVSp**: Variant nomenclature
+- **Color coding**:
+  - Red background = potentially pathogenic
+  - Green background = likely benign
+  - Yellow highlight = important variants (high impact + pathogenic + rare)
+- **Download**: Excel file with conditional formatting preserved
+
+---
+
+### Lookup UCSC Gene Button (REQUIRED for Plot)
+
+The **"Lookup UCSC Gene"** button is **mandatory** before generating gene coverage plots.
+
+**Why it's required:**
+- Verifies gene exists in selected genome
+- Retrieves exact gene coordinates
+- Loads transcript information needed for plot
+- Prevents errors during plot generation
+
+**How to use:**
+1. Select **"Filter By = Gene name"**
+2. Enter gene symbol in **"Gene name"** field (e.g., "TP53")
+3. Click **"Lookup UCSC Gene"** button (🔍 icon)
+4. **Wait** for query to complete
+5. Switch to **"UCSC gene"** tab
+6. **Verify** results:
+   - Gene found → Proceed with coverage calculation
+   - Empty table → Gene not found, check spelling/genome
+
+**Output columns:**
+- **name**: Transcript ID (e.g., uc001abc.1)
+- **chrom**: Chromosome (e.g., chr17)
+- **strand**: Orientation (+ or -)
+- **txStart**: Transcript start position
+- **txEnd**: Transcript end position
+- **cdsStart**: Coding sequence start
+- **cdsEnd**: Coding sequence end
+- **exonCount**: Number of exons
+- **name2**: Gene symbol (e.g., TP53)
+
+**What to check:**
+-  **name2** matches your input gene
+-  **chrom** is expected chromosome
+-  **txStart/txEnd** are reasonable coordinates
+-  At least one transcript returned
+-  Multiple transcripts = normal (longest is used for plot)
+
+**Troubleshooting:**
+- **Empty table** → Gene not found
+  - Check spelling: "TP53" not "p53", "BRCA1" not "Brca1"
+  - Verify genome selection (hg19/hg38)
+  - Try gene alias (e.g., "PARK2" vs "PRKN")
+  - Gene may not exist in UCSC database for selected genome
+- **Wrong gene** → Homonym exists
+  - Check chromosome matches expectation
+  - Verify coordinates are reasonable
+- **Unexpected coordinates** → Wrong genome build
+  - Switch between hg19/hg38 and retry
+
+**Example (BRCA1 in hg19):**
+```
+Input: Gene = "BRCA1", Genome = "hg19"
+
+Click "Lookup UCSC Gene" → "UCSC gene" tab shows:
+
+name          chrom   strand  txStart    txEnd      name2
+uc010ctr.3    chr17   -       41196312   41277500   BRCA1
+uc002ict.4    chr17   -       41196312   41322420   BRCA1
+
+Gene found on chr17
+Multiple transcripts (normal)
+Ready to calculate coverage
 ```
 
 ---
@@ -408,7 +738,6 @@ vignette("uncoverapp-tutorial", package = "uncoverappLib")
 ### Adding Custom Annotations
 
 You can merge additional gene-level annotations (e.g., OMIM, clinical databases) with coverage statistics:
-
 ```r
 buildInput(
   geneList = "genes.txt",
@@ -438,7 +767,6 @@ TP53      Li-Fraumeni syndrome    AD             191170
 ### Batch Processing Multiple Gene Panels
 
 Process different gene panels in parallel:
-
 ```r
 # Cardiology panel
 buildInput(
@@ -466,7 +794,6 @@ buildInput(
 ### Processing Whole Exome/Genome Data
 
 For WES/WGS, use pre-computed BED coverage to speed up processing:
-
 ```bash
 # Step 1: Generate coverage with bedtools (do once)
 for bam in *.bam; do
@@ -476,7 +803,6 @@ done
 # Step 2: Create sample list
 ls *_coverage.bed | xargs -I {} readlink -f {} > coverage.list
 ```
-
 ```r
 # Step 3: Process in R (very fast)
 buildInput(

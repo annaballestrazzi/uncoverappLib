@@ -97,10 +97,9 @@ p1 <- eventReactive(input$generate_gene_plot, {
     showNotification(paste("Gene not found on", chr), type="error", duration=5)
     return(NULL)
   }
-  
+
   start_gene <- min(coord_chr$start)
   end_gene <- max(coord_chr$end)
-  
   cat("Gene region:", start_gene, "-", end_gene, "\n")
   
   # =========================================
@@ -144,15 +143,55 @@ p1 <- eventReactive(input$generate_gene_plot, {
       chromosome = chr,
       start = start_gene, 
       end = end_gene,
-      showId = TRUE,
+      showId = FALSE,
       name = "Gene Annotation",
-      transcriptAnnotation = "symbol",
       cex.title = 1.2
     )
   }, error = function(e) {
     cat("ERROR creating gene track:", e$message, "\n")
     return(NULL)
   })
+  cat("DEBUG: gr_ex_track@range has", length(gr_ex_track@range), "elements\n")
+  cat("DEBUG: Names:", paste(names(gr_ex_track@range), collapse=", "), "\n")
+  transcript_list <<- NULL
+  if (length(gr_ex_track@range) > 0) {
+    # Per GRanges, i metadati sono in mcols()
+    transcript_metadata <- GenomicRanges::mcols(gr_ex_track@range)
+    
+    cat("DEBUG: Metadata columns:", paste(colnames(transcript_metadata), collapse=", "), "\n")
+    
+    # Prova varie colonne possibili
+    if ("transcript" %in% colnames(transcript_metadata)) {
+      transcript_ids <- as.character(transcript_metadata$transcript)
+    } else if ("tx_name" %in% colnames(transcript_metadata)) {
+      transcript_ids <- as.character(transcript_metadata$tx_name)
+    } else if ("tx_id" %in% colnames(transcript_metadata)) {
+      transcript_ids <- as.character(transcript_metadata$tx_id)
+    } else {
+      transcript_ids <- NULL
+    }
+    
+    cat("DEBUG: Found transcript IDs:", paste(head(transcript_ids, 5), collapse=", "), "\n")
+    cat("DEBUG: Total transcripts:", length(unique(transcript_ids)), "\n")
+    
+    # ✅ SALVA i transcript_ids in una variabile accessibile dopo plotTracks
+    if (!is.null(transcript_ids)) {
+      unique_transcripts <- unique(transcript_ids)
+      transcript_list <<- unique_transcripts
+    } else {
+      unique_transcripts <- NULL
+    }
+  } else {
+    unique_transcripts <- NULL
+  }
+
+  Gviz::displayPars(gr_ex_track) <- list(
+    collapse = FALSE,
+    collapseTranscripts = FALSE,
+    showId = FALSE,
+    cex = 1.0,
+    fontsize = 11
+  )
   
   if (is.null(gr_ex_track)) {
     showNotification("Failed to create gene annotation track", type="error", duration=5)
@@ -193,13 +232,13 @@ p1 <- eventReactive(input$generate_gene_plot, {
   # =========================================
   cat("\nSTEP 5: Rendering plot...\n")
   cat("This may take 30-60 seconds for large regions...\n")
-  
-  # Generate the plot (this draws to the graphics device)
+  par(mar = c(5, 15, 4, 2) + 0.1)
   plot_output <- tryCatch({
     Gviz::plotTracks(
       list(it, gtrack, ot, gr_ex_track),
       from = start_gene,
       to = end_gene,
+      innerMargin = 5,   
       chromosome = chr,
       reverseStrand = TRUE,
       ylim = ylims,
@@ -211,7 +250,9 @@ p1 <- eventReactive(input$generate_gene_plot, {
       # background.title = "gray50",  # <-- Grigio scuro
       # col.title = "white",          # <-- Scritte bianche
       col.axis = "gray50",
-      cex.axis = 0.8
+      cex.axis = 0.8,
+      fontsize = 14,
+      cex.title = 0.9
     )
   }, error = function(e) {
     cat("\n❌ ERROR rendering plot:", e$message, "\n")
@@ -223,7 +264,7 @@ p1 <- eventReactive(input$generate_gene_plot, {
     return(NULL)
   })
   
-  cat("\n✅ Plot rendered successfully!\n")
+  cat("\nPlot rendered successfully!\n")
   cat("\n======================================\n")
   cat("=== GENE PLOT GENERATION COMPLETE ===\n")
   cat("======================================\n\n")

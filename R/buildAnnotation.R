@@ -422,7 +422,7 @@ buildAnnotation <- function(sample_data,
     intersect_df$highlight_important <- grepl("H|M", intersect_df$MutationAssessor) & 
       intersect_df$ClinVar != "." & 
       !is.na(intersect_df$AF_gnomAD) & 
-      intersect_df$AF_gnomAD < 0.5
+      intersect_df$AF_gnomAD < 0.01
     
     cat("Important variants:", sum(intersect_df$highlight_important, na.rm = TRUE), "\n")
   }
@@ -485,9 +485,9 @@ buildAnnotation <- function(sample_data,
   greenStyle <- openxlsx::createStyle(fgFill = "#90EE90")  # Light green
   yellowStyle <- openxlsx::createStyle(fgFill = "#FFFF99") # Yellow
   
-  # ──────────────────────────────────────────────────────────────────────────
+  # ============================================================================
   # ClinVar: Red if pathogenic, Green if benign
-  # ──────────────────────────────────────────────────────────────────────────
+  # ============================================================================
   if ("ClinVar" %in% colnames(intersect_df_export)) {
     clinvar_col <- which(colnames(intersect_df_export) == "ClinVar")
     
@@ -510,11 +510,11 @@ buildAnnotation <- function(sample_data,
     )
   }
   
-  # ──────────────────────────────────────────────────────────────────────────
+  # ============================================================================  
   # CADD_PHED: Red if >20, Green if <=20
-  # ──────────────────────────────────────────────────────────────────────────
-  if ("CADD_PHED" %in% colnames(intersect_df)) {
-    cadd_col <- which(colnames(intersect_df) == "CADD_PHED")
+  # ============================================================================  
+  if ("CADD_PHED" %in% colnames(intersect_df_export)) {
+    cadd_col <- which(colnames(intersect_df_export) == "CADD_PHED")
     
     # Red for high CADD (>20)
     openxlsx::conditionalFormatting(
@@ -535,11 +535,11 @@ buildAnnotation <- function(sample_data,
     )
   }
   
-  # ──────────────────────────────────────────────────────────────────────────
+  # ============================================================================  
   # MutationAssessor: Red for H, Yellow for M, Green for others
-  # ──────────────────────────────────────────────────────────────────────────
-  if ("MutationAssessor" %in% colnames(intersect_df)) {
-    ma_col <- which(colnames(intersect_df) == "MutationAssessor")
+  # ============================================================================
+  if ("MutationAssessor" %in% colnames(intersect_df_export)) {
+    ma_col <- which(colnames(intersect_df_export) == "MutationAssessor")
     
     # Red for High impact
     openxlsx::conditionalFormatting(
@@ -570,11 +570,11 @@ buildAnnotation <- function(sample_data,
     )
   }
   
-  # ──────────────────────────────────────────────────────────────────────────
+  # ============================================================================  
   # M_CAP: Red if Deleterious (D), Green otherwise
-  # ──────────────────────────────────────────────────────────────────────────
-  if ("M_CAP" %in% colnames(intersect_df)) {
-    mcap_col <- which(colnames(intersect_df) == "M_CAP")
+  # ============================================================================
+  if ("M_CAP" %in% colnames(intersect_df_export)) {
+    mcap_col <- which(colnames(intersect_df_export) == "M_CAP")
     
     # Red for Deleterious
     openxlsx::conditionalFormatting(
@@ -595,11 +595,11 @@ buildAnnotation <- function(sample_data,
     )
   }
   
-  # ──────────────────────────────────────────────────────────────────────────
+  # ============================================================================  
   # AF_gnomAD: Red if rare (<0.01), Green if common (>=0.01)
-  # ──────────────────────────────────────────────────────────────────────────
-  if ("AF_gnomAD" %in% colnames(intersect_df)) {
-    af_col <- which(colnames(intersect_df) == "AF_gnomAD")
+  # ============================================================================
+  if ("AF_gnomAD" %in% colnames(intersect_df_export)) {
+    af_col <- which(colnames(intersect_df_export) == "AF_gnomAD")
     
     # Red for rare variants
     openxlsx::conditionalFormatting(
@@ -620,9 +620,9 @@ buildAnnotation <- function(sample_data,
     )
   }
   
-  # ──────────────────────────────────────────────────────────────────────────
+  # ============================================================================
   # BONUS: Highlight important variants
-  # ──────────────────────────────────────────────────────────────────────────
+  # ============================================================================
   if (all(c("MutationAssessor", "ClinVar", "AF_gnomAD", "start", "end") %in% colnames(intersect_df_export))) {
     
     # Ricalcola righe importanti da intersect_df_export
@@ -630,7 +630,7 @@ buildAnnotation <- function(sample_data,
       grepl("H|M", intersect_df_export$MutationAssessor) & 
       intersect_df_export$ClinVar != "." & 
       !is.na(intersect_df_export$AF_gnomAD) & 
-      intersect_df_export$AF_gnomAD < 0.5
+      intersect_df_export$AF_gnomAD < 0.01
     )
     
     if (length(important_rows) > 0) {

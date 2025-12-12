@@ -57,7 +57,9 @@ mydata <- reactive({
                       stringsAsFactors = FALSE)
     
     cat("Raw dimensions:", dim(tmp), "\n")
+    cat("Original columns:", paste(colnames(tmp), collapse=", "), "\n")
     
+    # Standardize first 3 columns
     if (ncol(tmp) >= 3) {
       colnames(tmp)[1:3] <- c("chromosome", "start", "end")
     }
@@ -66,29 +68,33 @@ mydata <- reactive({
     tmp$start <- as.integer(tmp$start)
     tmp$end <- as.integer(tmp$end)
     
-    if (any(grepl("^sample_", names(tmp)))) {
-      cat("Found existing sample_* columns\n")
-      return(tmp)
-    }
-    
+    # ✅ FIX: Rename ALL columns starting with X to sample_ (in one go!)
     if (ncol(tmp) >= 4) {
-      sample_label <- tools::file_path_sans_ext(basename(file_info$name))
-      cov <- suppressWarnings(as.integer(tmp[[4]]))
-      
-      new_df <- data.frame(
-        chromosome = tmp$chromosome,
-        start = tmp$start,
-        end = tmp$end,
-        cov = cov,
-        stringsAsFactors = FALSE
-      )
-      colnames(new_df)[4] <- paste0("sample_", sample_label)
-      
-      cat("Created sample column:", colnames(new_df)[4], "\n")
-      return(new_df)
+      for (i in 4:ncol(tmp)) {
+        col_name <- colnames(tmp)[i]
+        
+        # If starts with X followed by digits → replace X with sample_
+        if (grepl("^X\\d", col_name)) {
+          colnames(tmp)[i] <- sub("^X", "sample_", col_name)
+        } 
+        # If doesn't have sample_ prefix → add it
+        else if (!grepl("^sample_", col_name)) {
+          colnames(tmp)[i] <- paste0("sample_", col_name)
+        }
+        
+        # Convert to integer
+        # Convert to numeric and verify
+        tmp[[i]] <- suppressWarnings(as.numeric(tmp[[i]]))
+        
+        # Debug: check if conversion worked
+        if (all(tmp[[i]] == 0, na.rm = TRUE)) {
+          cat("WARNING: Column", colnames(tmp)[i], "converted to all zeros! Check input format.\n")
+        }
+      }
     }
     
-    return(NULL)
+    cat("Final columns:", paste(colnames(tmp), collapse=", "), "\n")
+    return(tmp)
   }
   
   if (source == "pileup") {

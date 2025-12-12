@@ -15,6 +15,22 @@ server <- function (input, output, session){
   })
 
   options(shiny.maxRequestSize=30*1024^2)
+    # ============================================================================
+  # LOAD OMIM GENE LIST (caricato UNA SOLA VOLTA per tutta la sessione)
+  # ============================================================================
+  omim_file <- system.file("extdata", "sys_ndd_2025_subset.tsv", 
+                           package = "uncoverappLib")
+  
+  if (file.exists(omim_file)) {
+    OMIM_DATA <- read.table(omim_file, header = TRUE, sep = "\t", 
+                            stringsAsFactors = FALSE, quote = "", fill = TRUE)
+    OMIM_GENES <- unique(OMIM_DATA$SYMBOL)
+    cat("✓ Loaded", length(OMIM_GENES), "OMIM genes from database\n")
+  } else {
+    cat("WARNING: OMIM file not found, OMIM highlighting disabled\n")
+    OMIM_DATA <- data.frame()
+    OMIM_GENES <- character(0)
+  }
 
   script1 <- system.file(
     "extdata",
@@ -45,8 +61,70 @@ server <- function (input, output, session){
   source('compute-binomial.R', local=TRUE)
   source('waiter-helpers.R', local=TRUE)
 
+  # ============================================================================
+  # DYNAMIC SAMPLE SELECTOR - Update dropdown when file is loaded
+  # ============================================================================
 
-
+  observeEvent(mydata(), {
+    req(mydata())
+    
+    cat("\n=== UPDATING SAMPLE DROPDOWN ===\n")
+    
+    data <- mydata()
+    
+    # Extract sample column names
+    coord_cols <- c("chromosome", "start", "end")
+    all_cols <- colnames(data)
+    sample_cols <- setdiff(all_cols, coord_cols)
+    
+    # Filter for sample/count columns
+    sample_cols <- sample_cols[grepl("^(sample_|count_)", sample_cols)]
+    
+    cat("Available samples:", length(sample_cols), "\n")
+    if (length(sample_cols) > 0) {
+      cat("Sample names:", paste(sample_cols, collapse = ", "), "\n")
+    }
+    
+    if (length(sample_cols) == 0) {
+      # No samples found
+      cat("WARNING: No sample columns detected\n")
+      updateSelectInput(
+        session, 
+        "Sample",
+        label = "Sample (none found)",
+        choices = c("No samples available" = ""),
+        selected = NULL
+      )
+      
+      showNotification(
+        "Warning: No sample columns found in loaded file",
+        type = "warning",
+        duration = 5
+      )
+      
+    } else {
+      # Update dropdown with available samples
+      new_label <- paste0("Sample (", length(sample_cols), " available)")
+      
+      updateSelectInput(
+        session, 
+        "Sample",
+        label = new_label,
+        choices = sample_cols,
+        selected = sample_cols[1]
+      )
+      
+      cat("✓ Dropdown updated successfully\n")
+      cat("✓ Auto-selected:", sample_cols[1], "\n\n")
+      
+      showNotification(
+        paste("Loaded", length(sample_cols), "sample(s)"),
+        type = "message",
+        duration = 2
+      )
+    }
+    
+  }, ignoreInit = TRUE, ignoreNULL = TRUE)
 
   # ============================================================================
   # OUTPUT: low_coverage_ready (for annotation button visibility)
@@ -93,20 +171,6 @@ server <- function (input, output, session){
   })
   
   # ============================================================================
-  # GENE PLOT WAITER
-  # ============================================================================
-  
-  # Show waiter when gene plot button is pressed
-  observeEvent(input$generate_gene_plot, {
-    show_uncoverapp_waiter(
-      message = "Generating gene coverage plot...",
-      detail = "Creating Gviz tracks - This may take a minute"
-    )
-  })
-  
-  # Note: Waiter is hidden in the renderPlot output after plot completes
-  
-  # ============================================================================
   # OUTPUT: COVERAGE INPUT TABLE
   # ============================================================================
   
@@ -122,7 +186,7 @@ server <- function (input, output, session){
       df <- coverage_input()
       
       end_time <- Sys.time()
-      cat(paste("â±ï¸ Table created in:", 
+      cat(paste("Table created in:", 
                 round(difftime(end_time, start_time, units = "secs"), 1), 
                 "seconds\n"))
       
@@ -169,22 +233,9 @@ server <- function (input, output, session){
         
         cat("  Rows:", nrow(original_data), "\n")
         
-        # Step 2: Carica OMIM
-        cat("Loading OMIM annotations...\n")
-        fourth.file <- system.file(
-          "extdata",
-          "sys_ndd_2025_subset.tsv",
-          package = "uncoverappLib"
-        )
-        
-        omim_gene <- read.table(
-          fourth.file, 
-          header = TRUE, 
-          sep = "\t", 
-          stringsAsFactors = FALSE,
-          quote = "",
-          fill = TRUE
-        )
+        # Step 2: Usa OMIM già caricato
+        cat("Using pre-loaded OMIM annotations...\n")
+        omim_gene <- OMIM_DATA
         
         cat("  OMIM rows:", nrow(omim_gene), "\n")
         
@@ -280,21 +331,69 @@ server <- function (input, output, session){
   # ============================================================================
   # OUTPUT: ALL GENE COVERAGE PLOT
   # ============================================================================
-  output$all_gene <- renderPlot({
-    cat("\n=== RENDER PLOT TRIGGERED ===\n")
-    
-    # Use p1() from compute-plots.R which handles everything:
-    # - Button press detection via eventReactive
-    # - Data validation
-    # - Track creation
-    # - Waiter show/hide
-    # - Plot rendering
-    p1()
-    
-    cat("PLOT RENDERED TO UI!\n\n")
-    
-  }, height = 400, width = 800)
-
+    output$all_gene <- renderPlot({
+      cat("\n=== RENDER PLOT TRIGGERED ===\n")
+      p1()
+      cat("PLOT RENDERED!\n")
+    }, height = 600, width = 800)
+    # ============================================================================
+    # DOWNLOAD: GENE COVERAGE PLOT
+    # ============================================================================
+    output$download_plot <- downloadHandler(
+      filename = function() {
+        gene_name <- if (!is.null(input$Gene_name) && input$Gene_name != "") {
+          input$Gene_name
+        } else {
+          "gene"
+        }
+        paste0('coverage_plot_', gene_name, '_', Sys.Date(), '.png')
+      },
+      
+      content = function(file) {
+        # Apri dispositivo grafico PNG
+        png(file, width = 1200, height = 800, res = 120)
+        
+        # Rigenera il plot
+        p1()
+        
+        # Chiudi dispositivo
+        dev.off()
+      }
+    )
+    output$transcript_list_text <- renderUI({
+      req(input$generate_gene_plot > 0)
+      Sys.sleep(0.3)
+      
+      transcripts <- tryCatch({
+        get("transcript_list", envir = .GlobalEnv)
+      }, error = function(e) {
+        NULL
+      })
+      
+      # Check se esiste e non è vuoto
+      if (is.null(transcripts) || length(transcripts) == 0) {
+        return(tags$p("No transcript information available", style = "color: gray;"))
+      }
+      
+      tagList(
+        tags$div(style = "margin-top: 150px;"),
+        h4("Transcripts (", length(transcripts), ")"),
+        tags$div(
+          style = "border: 1px solid #ddd; 
+                  padding: 10px; 
+                  background: #f9f9f9; 
+                  max-height: 200px; 
+                  overflow-y: auto;
+                  width: 80%;
+                  margin: 0 auto;",
+          tags$ol(
+            lapply(transcripts, function(t) {
+              tags$li(as.character(t))
+            })
+          )
+        )
+      )
+    })
   # Reduced from 800x1200
   # output$all_gene <- renderPlot({
   #   validate(
@@ -356,6 +455,19 @@ server <- function (input, output, session){
     },
     
     content = function(file){
+      # ============================================================================
+      # WAITER - Show loading screen
+      # ============================================================================
+      show_uncoverapp_waiter(
+        message = "Preparing Excel download...",
+        detail = "Formatting annotations and applying styles"
+      )
+      
+      # Ensure waiter closes even if error occurs
+      on.exit({
+        waiter::waiter_hide()
+      })
+  
       # USA annotated_variants_data() invece di condform_table()!
       data <- annotated_variants_data()
       
@@ -364,9 +476,11 @@ server <- function (input, output, session){
         return(NULL)
       }
       
-      # Rimuovi colonna helper prima di esportare
+      # Rimuovi colonne helper
       data_export <- data
       data_export$highlight_important <- NULL
+      data_export$is_omim <- NULL
+      data_export$is_pathogenic <- NULL
       
       # Crea workbook
       wb <- openxlsx::createWorkbook()
@@ -381,6 +495,15 @@ server <- function (input, output, session){
                         fontSize=12,
                         fontName="Arial Narrow", fgFill = "#4F80BD")
       
+      hs <- openxlsx::createStyle(textDecoration = "BOLD", fontColour = "#FFFFFF",
+                        fontSize=12,
+                        fontName="Arial Narrow", fgFill = "#4F80BD")
+      
+      # Stili per OMIM genes
+      omim_light <- openxlsx::createStyle(fgFill = "#E3F2FD")  # azzurro chiaro
+      omim_dark <- openxlsx::createStyle(fgFill = "#1976D2", fontColour = "white", 
+                                         textDecoration = "bold")  # azzurro scuro + bold
+      
       # Scrivi dati
       openxlsx::writeData(wb, "Variants", data_export, headerStyle = hs)
       # Trova indici delle colonne dinamicamente
@@ -392,9 +515,11 @@ server <- function (input, output, session){
       col_ClinVar <- which(col_names == "ClinVar")
       col_start <- which(col_names == "start")
       col_end <- which(col_names == "end")
-      
+      col_GENENAME <- which(col_names == "GENENAME")
+
       nrows <- nrow(data_export)
-      
+      data_export$omim_level <- NULL
+
       # Conditional formatting: MutationAssessor
       if (length(col_MutationAssessor) > 0) {
         openxlsx::conditionalFormatting(wb, "Variants", cols = col_MutationAssessor,
@@ -429,9 +554,9 @@ server <- function (input, output, session){
       # Conditional formatting: AF_gnomAD
       if (length(col_AF_gnomAD) > 0) {
         openxlsx::conditionalFormatting(wb, "Variants", cols = col_AF_gnomAD,
-                              rows = 2:(nrows + 1), rule = "<0.5", style = negStyle)
+                              rows = 2:(nrows + 1), rule = "<0.01", style = negStyle)
         openxlsx::conditionalFormatting(wb, "Variants", cols = col_AF_gnomAD,
-                              rows = 2:(nrows + 1), rule = ">=0.5", style = posStyle)
+                              rows = 2:(nrows + 1), rule = ">=0.01", style = posStyle)
       }
       
       # Conditional formatting: ClinVar
@@ -448,7 +573,7 @@ server <- function (input, output, session){
           grepl("H|M", data_export$MutationAssessor) & 
           data_export$ClinVar != "." & 
           !is.na(data_export$AF_gnomAD) & 
-          data_export$AF_gnomAD < 0.5
+          data_export$AF_gnomAD < 0.01
         )
         
         if (length(important_rows) > 0) {
@@ -458,7 +583,30 @@ server <- function (input, output, session){
                              gridExpand = TRUE)
         }
       }
-      
+      # ============================================
+      # Color GENENAME based on OMIM status
+      # ============================================
+      if (length(col_GENENAME) > 0) {
+        # CRITICAL: Usa 'data' (originale) non 'data_export' (già modificato)
+        omim_high_rows <- which(data$omim_level == "high")
+        omim_medium_rows <- which(data$omim_level == "medium")
+        
+        # Apply dark blue to high priority (OMIM + pathogenic)
+        if (length(omim_high_rows) > 0) {
+          openxlsx::addStyle(wb, "Variants", style = omim_dark,
+                             rows = omim_high_rows + 1,  # +1 perché riga 1 è header
+                             cols = col_GENENAME,
+                             gridExpand = TRUE)
+        }
+        
+        # Apply light blue to medium priority (OMIM only)
+        if (length(omim_medium_rows) > 0) {
+          openxlsx::addStyle(wb, "Variants", style = omim_light,
+                             rows = omim_medium_rows + 1,
+                             cols = col_GENENAME,
+                             gridExpand = TRUE)
+        }
+      }
       # Auto-size columns
       openxlsx::setColWidths(wb, "Variants", cols = 1:ncol(data_export), widths = "auto")
       

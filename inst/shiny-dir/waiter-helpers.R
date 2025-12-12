@@ -11,7 +11,7 @@
 show_uncoverapp_waiter <- function(
     message = "Processing...", 
     detail = NULL,
-    color = "rgba(27, 79, 114, 0.95)",  # uncoverAPP dark blue
+    color = "rgba(27, 79, 114, 1",  # uncoverAPP dark blue
     logo_height = 120
 ) {
   
@@ -40,7 +40,7 @@ show_uncoverapp_waiter <- function(
     
     # Dettaglio opzionale
     if (!is.null(detail)) {
-      shiny::p(detail, style = "color: #E8F4F8; font-size: 16px; margin-top: 10px;")
+      shiny::p(detail, style = "color: white; font-size: 16px; margin-top: 10px;")
     }
   )
   
@@ -162,7 +162,7 @@ download_with_progress <- function(download_function, filename, steps = NULL) {
     
     waitress$close()
     showNotification(
-      paste0("âœ“ File saved: ", basename(filename)), 
+      paste0("File saved: ", basename(filename)), 
       type = "message", 
       duration = 3
     )

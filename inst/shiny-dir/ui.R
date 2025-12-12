@@ -207,8 +207,7 @@ preprocess <- function() {
                       shiny::mainPanel(
                         tabsetPanel(
                           tabPanel(title= "input for uncoverapp",
-                                   shinycssloaders::withSpinner(
-                                     DT::DTOutput("input1"))
+                                     DT::DTOutput("input1")
                           )
                         ) )
                     )))
@@ -243,9 +242,11 @@ myHome <- function() {
              helpText(em("Select minimum value as coverage threshold")),
              hr(),
              
-             textInput(inputId = "Sample", label = "Sample"),
-             helpText(em("Example: example_POLG.bam")),
-             hr(),
+             selectInput(inputId = "Sample", 
+              label = "Sample",
+              choices = NULL,
+              selected = NULL),
+             helpText(em("Select sample from dropdown")),
              
              # ═══════════════════════════════════════════════════════════
              # FILTER BY (radio buttons)
@@ -345,22 +346,33 @@ myHome <- function() {
              hr(),
              
              tabsetPanel(
-               tabPanel("bed file", shinycssloaders::withSpinner(DT::DTOutput("text"))),
+               tabPanel("bed file", DT::DTOutput("text")),
                tabPanel("Low-coverage positions", DT::DTOutput("text_cv")),
-               tabPanel("UCSC gene", shinycssloaders::withSpinner(DT::DTOutput('ccg'))),
+               tabPanel("UCSC gene", DT::DTOutput('ccg')),
                tabPanel("Gene coverage",
-                        actionButton("generate_gene_plot", 
+                        actionButton("generate_gene_plot",  
                                       "Generate Gene Coverage Plot",
                                       icon = icon("chart-area"),
                                       style = "color: #fff; background-color: #3498db; 
                                               border-color: #2980b9; width: 100%; 
                                               margin-bottom: 15px; font-weight: bold;"),
-                        shinycssloaders::withSpinner(plotOutput("all_gene")),
+                        downloadButton("download_plot", 
+                                        "Download Plot (PNG)",
+                                        icon = icon("download"),
+                                        style = "color: #fff !important; background-color: #3498db; 
+                                                border-color: #2980b9; width: 100%; 
+                                                margin-bottom: 15px; font-weight: bold;"),
+                        plotOutput("all_gene"),
+                        hr(),
+                        hr(),
+                        uiOutput("transcript_list_text"),
+                        hr(),
                         DT::DTOutput('df.l')
                 ),
                tabPanel("Annotations on low-coverage positions",
                         helpText(em("dbSNP-annotation collects all consequences found in VEP-defined canonical transcripts")),
-                        shinycssloaders::withSpinner(DT::DTOutput("uncover_position"))),
+                        DT::DTOutput("uncover_position")
+               ),
                id = "tabSet"
              ),
              hr(),
@@ -410,9 +422,8 @@ myTab1 <- function() {
                                    annotated as variants with AF> maxAF
                                    (default maxAF value: 5%)"),align="center",
                                 style="color:blue"),
-                       style = "font-size: 100%; width: 100%",
-                       shinycssloaders::withSpinner(
-                       DT::DTOutput("uncoverPosition")))),
+                       style = "font-size: 100%; width: 100%", 
+                       DT::DTOutput("uncoverPosition"))),
              br(),
              br(),
              downloadButton("download_maxAF", "Download_maxAF",

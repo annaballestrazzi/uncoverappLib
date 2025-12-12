@@ -370,11 +370,21 @@ annotated_variants_data <- reactive({
     return(NULL)
   }
   
-  # Aggiungi colonna helper per highlight
+  # Aggiungi colonne helper per highlight
   data$highlight_important <- grepl("H|M", data$MutationAssessor) & 
                               data$ClinVar != "." & 
                               !is.na(data$AF_gnomAD) & 
-                              data$AF_gnomAD < 0.5
+                              data$AF_gnomAD < 0.01
+  
+  # Flag OMIM genes (usa la lista globale OMIM_GENES caricata in server.R)
+  data$is_omim <- data$GENENAME %in% OMIM_GENES
+  
+  # Flag pathogenic ClinVar
+  data$is_pathogenic <- grepl("athogenic", data$ClinVar, ignore.case = TRUE)
+  
+  # Combined OMIM level: high = OMIM + pathogenic, medium = OMIM only
+  data$omim_level <- ifelse(data$is_omim & data$is_pathogenic, "high",
+                     ifelse(data$is_omim, "medium", "none"))
   
   cat("Dataframe ready:", nrow(data), "variants\n")
   return(data)
@@ -406,7 +416,15 @@ condform_table <- reactive({
       scrollX = TRUE,
       scrollY = "600px",
       dom = 'Bfrtip',
-      buttons = c('copy', 'csv', 'excel'),
+      buttons = list(
+                'copy',
+                list(extend = 'csv', 
+                    filename = 'low_coverage_annotations',
+                    title = 'Low Coverage Annotations'),
+                list(extend = 'excel', 
+                    filename = 'low_coverage_annotations',
+                    title = 'Low Coverage Annotations')
+              ),
       columnDefs = list(
         list(targets = which(colnames(data) == "highlight_important") - 1, visible = FALSE)
       )
@@ -423,12 +441,28 @@ condform_table <- reactive({
     DT::formatStyle('M_CAP',
                     backgroundColor = DT::styleEqual(c('D'), c('lightcoral'), default = 'lightgreen')) %>%
     DT::formatStyle('AF_gnomAD',
-                    backgroundColor = DT::styleInterval(c(0.5), c('lightcoral', 'lightgreen'))) %>%
+                    backgroundColor = DT::styleInterval(c(0.01), c('lightcoral', 'lightgreen'))) %>%
     DT::formatStyle(c('start', 'end'), 'highlight_important',
                     backgroundColor = DT::styleEqual(c(TRUE, FALSE), c('yellow', 'white'))) %>%
     DT::formatStyle(c('start', 'end'), 'highlight_important',
                     color = DT::styleEqual(c(TRUE, FALSE), c('red', 'green')))
-  
+    dt <- dt %>%
+    DT::formatStyle(
+      'GENENAME', 
+      'omim_level',
+      backgroundColor = DT::styleEqual(
+        c("high", "medium", "none"),
+        c("#1976D2", "#E3F2FD", "white")  # azzurro scuro, azzurro chiaro, bianco
+      ),
+      color = DT::styleEqual(
+        c("high", "medium", "none"),
+        c("white", "black", "black")  # testo bianco solo per azzurro scuro
+      ),
+      fontWeight = DT::styleEqual(
+        c("high", "medium"),
+        c("bold", "normal")  # bold per high priority
+      )
+    )
   cat("DT widget created\n")
   return(dt)
 })
