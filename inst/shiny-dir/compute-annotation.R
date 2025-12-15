@@ -426,7 +426,7 @@ condform_table <- reactive({
                     title = 'Low Coverage Annotations')
               ),
       columnDefs = list(
-        list(targets = which(colnames(data) == "highlight_important") - 1, visible = FALSE)
+        list(targets = which(colnames(data) %in% c("highlight_important", "omim_level", "is_omim", "is_pathogenic")) - 1, visible = FALSE)
       )
     ),
     extensions = 'Buttons',

@@ -1,0 +1,15 @@
+gene	MIM_OMIM	conting
+B4GALNT4	OMIM_disease	1
+CDYL2	OMIM_disease	1
+CT47A11	OMIM_disease	1
+CTBP1	OMIM_disease	1
+DGKD	OMIM_disease	1
+HECA	OMIM_disease	1
+JAG2	OMIM_disease	1
+MMP24	OMIM_disease	1
+PHF2	OMIM_disease	1
+PHIP	OMIM_disease	1
+RXRA	OMIM_disease	1
+SDC3	OMIM_disease	1
+SHANK3	OMIM_disease	1
+TAF4	OMIM_disease	1

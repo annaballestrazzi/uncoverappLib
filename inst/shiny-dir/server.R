@@ -470,6 +470,7 @@ server <- function (input, output, session){
   
       # USA annotated_variants_data() invece di condform_table()!
       data <- annotated_variants_data()
+      data_original <- data
       
       if (is.null(data) || nrow(data) == 0) {
         showNotification("No data to download!", type = "error")
@@ -481,6 +482,7 @@ server <- function (input, output, session){
       data_export$highlight_important <- NULL
       data_export$is_omim <- NULL
       data_export$is_pathogenic <- NULL
+      data_export$omim_level <- NULL
       
       # Crea workbook
       wb <- openxlsx::createWorkbook()
@@ -518,7 +520,6 @@ server <- function (input, output, session){
       col_GENENAME <- which(col_names == "GENENAME")
 
       nrows <- nrow(data_export)
-      data_export$omim_level <- NULL
 
       # Conditional formatting: MutationAssessor
       if (length(col_MutationAssessor) > 0) {
@@ -588,8 +589,8 @@ server <- function (input, output, session){
       # ============================================
       if (length(col_GENENAME) > 0) {
         # CRITICAL: Usa 'data' (originale) non 'data_export' (già modificato)
-        omim_high_rows <- which(data$omim_level == "high")
-        omim_medium_rows <- which(data$omim_level == "medium")
+        omim_high_rows <- which(data_original$omim_level == "high")
+        omim_medium_rows <- which(data_original$omim_level == "medium")
         
         # Apply dark blue to high priority (OMIM + pathogenic)
         if (length(omim_high_rows) > 0) {
