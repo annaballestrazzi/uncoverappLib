@@ -107,7 +107,25 @@ buildAnnotation <- function(sample_data,
   cat(paste("Input loading took:", 
             round(difftime(Sys.time(), start_time, units = "secs"), 2), 
             "seconds\n\n"))
+  # ==============================================================================
+  # STEP 1.5: LOAD OMIM DATA
+  # ==============================================================================
   
+  cat("=== LOADING OMIM GENE LIST ===\n")
+  
+  omim_file <- system.file("extdata", "sys_ndd_2025_subset.tsv", 
+                           package = "uncoverappLib")
+  
+  if (file.exists(omim_file)) {
+    OMIM_DATA <- read.table(omim_file, header = TRUE, sep = "\t", 
+                            stringsAsFactors = FALSE, quote = "", fill = TRUE)
+    OMIM_GENES <- unique(OMIM_DATA$SYMBOL)
+    cat("Loaded", length(OMIM_GENES), "OMIM genes from database\n\n")
+  } else {
+    cat("WARNING: OMIM file not found, OMIM highlighting disabled\n\n")
+    OMIM_DATA <- data.frame()
+    OMIM_GENES <- character(0)
+  }
   # ==============================================================================
   # STEP 2: FIND ACTUAL COLUMN NAME
   # ==============================================================================
@@ -418,19 +436,46 @@ buildAnnotation <- function(sample_data,
   cat("Variants after deduplication:", nrow(intersect_df), "\n")
   cat("Duplicates removed:", nrow(bed2_hits) - nrow(intersect_df), "\n\n")
 
+  # ==============================================================================
+  # ADD HELPER COLUMNS FOR HIGHLIGHTING
+  # ==============================================================================
+  
+  cat("Adding helper columns for Excel formatting...\n")
+  
+  # 1. Flag for important variants
   if (all(c("MutationAssessor", "ClinVar", "AF_gnomAD") %in% colnames(intersect_df))) {
     intersect_df$highlight_important <- grepl("H|M", intersect_df$MutationAssessor) & 
-      intersect_df$ClinVar != "." & 
-      !is.na(intersect_df$AF_gnomAD) & 
-      intersect_df$AF_gnomAD < 0.01
-    
-    cat("Important variants:", sum(intersect_df$highlight_important, na.rm = TRUE), "\n")
+                                        intersect_df$ClinVar != "." & 
+                                        !is.na(intersect_df$AF_gnomAD) & 
+                                        intersect_df$AF_gnomAD < 0.01
+  } else {
+    intersect_df$highlight_important <- FALSE
   }
+  
+  # 2. Flag OMIM genes
+  intersect_df$is_omim <- intersect_df$GENENAME %in% OMIM_GENES
+  
+  # 3. Flag pathogenic ClinVar
+  intersect_df$is_pathogenic <- grepl("athogenic", intersect_df$ClinVar, ignore.case = TRUE)
+  
+  # 4. Combined OMIM level
+  intersect_df$omim_level <- ifelse(intersect_df$is_omim & intersect_df$is_pathogenic, "high",
+                             ifelse(intersect_df$is_omim, "medium", "none"))
+  
+  cat("Important variants:", sum(intersect_df$highlight_important, na.rm = TRUE), "\n")
+  cat("OMIM genes:", 
+      sum(intersect_df$omim_level == "high"), "high priority,",
+      sum(intersect_df$omim_level == "medium"), "medium priority\n")
 
+  # Save original with helper columns
+  intersect_df_original <- intersect_df
+  
+  # Remove ALL helper columns from export
   intersect_df_export <- intersect_df
-  if ("highlight_important" %in% colnames(intersect_df_export)) {
-    intersect_df_export$highlight_important <- NULL
-  }
+  intersect_df_export$highlight_important <- NULL
+  intersect_df_export$is_omim <- NULL
+  intersect_df_export$is_pathogenic <- NULL
+  intersect_df_export$omim_level <- NULL
 
   cat(paste("Overlap computation took:",
             round(difftime(Sys.time(), overlap_time, units = "secs"), 2),
@@ -484,7 +529,13 @@ buildAnnotation <- function(sample_data,
   redStyle <- openxlsx::createStyle(fgFill = "#FFB6C1")    # Light red/pink
   greenStyle <- openxlsx::createStyle(fgFill = "#90EE90")  # Light green
   yellowStyle <- openxlsx::createStyle(fgFill = "#FFFF99") # Yellow
-  
+  # Styles for OMIM genes
+  omimLightStyle <- openxlsx::createStyle(fgFill = "#E3F2FD")
+  omimDarkStyle <- openxlsx::createStyle(
+    fgFill = "#1976D2", 
+    fontColour = "#FFFFFF", 
+    textDecoration = "bold"
+  )
   # ============================================================================
   # ClinVar: Red if pathogenic, Green if benign
   # ============================================================================
@@ -619,19 +670,48 @@ buildAnnotation <- function(sample_data,
       style = greenStyle
     )
   }
+  # ============================================================================
+  # OMIM GENES: Blue highlighting on GENENAME column
+  # ============================================================================
+  if ("GENENAME" %in% colnames(intersect_df_export)) {
+    genename_col <- which(colnames(intersect_df_export) == "GENENAME")
+    
+    # Find rows using original data with helper columns
+    omim_high_rows <- which(intersect_df_original$omim_level == "high")
+    omim_medium_rows <- which(intersect_df_original$omim_level == "medium")
+    
+    # Dark blue for high priority
+    if (length(omim_high_rows) > 0) {
+      openxlsx::addStyle(
+        wb, "Low Coverage Variants",
+        style = omimDarkStyle,
+        rows = omim_high_rows + 1,
+        cols = genename_col,
+        gridExpand = TRUE
+      )
+      cat("Applied dark blue to", length(omim_high_rows), "high-priority OMIM genes\n")
+    }
+    
+    # Light blue for medium priority
+    if (length(omim_medium_rows) > 0) {
+      openxlsx::addStyle(
+        wb, "Low Coverage Variants",
+        style = omimLightStyle,
+        rows = omim_medium_rows + 1,
+        cols = genename_col,
+        gridExpand = TRUE
+      )
+      cat("Applied light blue to", length(omim_medium_rows), "medium-priority OMIM genes\n")
+    }
+  }
   
   # ============================================================================
   # BONUS: Highlight important variants
   # ============================================================================
   if (all(c("MutationAssessor", "ClinVar", "AF_gnomAD", "start", "end") %in% colnames(intersect_df_export))) {
     
-    # Ricalcola righe importanti da intersect_df_export
-    important_rows <- which(
-      grepl("H|M", intersect_df_export$MutationAssessor) & 
-      intersect_df_export$ClinVar != "." & 
-      !is.na(intersect_df_export$AF_gnomAD) & 
-      intersect_df_export$AF_gnomAD < 0.01
-    )
+    # Use helper column from original data
+    important_rows <- which(intersect_df_original$highlight_important == TRUE)
     
     if (length(important_rows) > 0) {
       col_start <- which(colnames(intersect_df_export) == "start")
@@ -639,13 +719,8 @@ buildAnnotation <- function(sample_data,
       
       yellowHighlight <- openxlsx::createStyle(fgFill = "#FFFF00")
       
-      openxlsx::addStyle(
-        wb, "Low Coverage Variants", 
-        style = yellowHighlight,
-        rows = important_rows + 1,
-        cols = c(col_start, col_end),
-        gridExpand = TRUE
-      )
+      openxlsx::addStyle(wb, "Low Coverage Variants", headerStyle, 
+                   rows = 1, cols = 1:ncol(intersect_df_export), gridExpand = TRUE)
       
       cat("Highlighted", length(important_rows), "important variants\n")
     }

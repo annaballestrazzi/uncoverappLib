@@ -509,10 +509,11 @@ if (type_coverage == "bam") {
       )
       
       df_trimmed <- as.data.frame(df_gr_trimmed)
+      df_trimmed$SYMBOL <- for_grange_overlapping$SYMBOL  # ← AGGIUNGI SYMBOL QUI
       df_trimmed <- df_trimmed %>%
-        dplyr::select(seqnames, start, end, count) %>%
+        dplyr::select(seqnames, start, end, count, SYMBOL) %>%  # ← Include SYMBOL
         dplyr::distinct()
-      
+
       message(paste("  Final intervals:", nrow(df_trimmed)))
       return(df_trimmed)
     })
@@ -528,13 +529,30 @@ if (type_coverage == "bam") {
     } else {
       pp <- df_list[[1]]
       for (i in 2:length(df_list)) {
-        pp <- merge(pp, df_list[[i]], by = c("seqnames", "start", "end"), 
+        pp <- merge(pp, df_list[[i]], 
+                    by = c("seqnames", "start", "end", "SYMBOL"),  # ← AGGIUNGI SYMBOL
                     all = TRUE, suffixes = c("", paste0(".sample", i)))
       }
     }
     
     pp[is.na(pp)] <- 0
+    # Add SYMBOL annotation for BED coverage (same as BAM)
+    message("Adding gene annotations to BED coverage...")
+    pp_gr <- GenomicRanges::makeGRangesFromDataFrame(pp, keep.extra.columns = TRUE)
+    overlaps <- GenomicRanges::findOverlaps(pp_gr, for_grange, type = "any")
+    
+    if (length(overlaps) > 0) {
+      pp_gr_matched <- pp_gr[queryHits(overlaps)]
+      mcols(pp_gr_matched)$SYMBOL <- for_grange[subjectHits(overlaps)]$SYMBOL
+      pp <- as.data.frame(pp_gr_matched) %>%
+        dplyr::select(-width, -strand) %>%
+        dplyr::distinct()
+      message(paste("Added SYMBOL to", nrow(pp), "positions"))
+    } else {
+      warning("No overlaps found between BED coverage and target regions")
+    }
   }
+  
   
   # Metadata (OUTSIDE if/else)
   attr(pp, "coordinate_system") <- "1-based"
@@ -583,14 +601,18 @@ if (type_coverage == "bam") {
   colnames(ppinp)[1:3] <- c("seqnames", "start", "end")
   
   # Sample names
-  n <- length(colnames(ppinp)[-1:-3])
+  # Identify sample columns (exclude coordinates AND SYMBOL)
+  coord_cols <- c("seqnames", "start", "end", "SYMBOL")
+  sample_cols <- setdiff(colnames(ppinp), coord_cols)
+  n <- length(sample_cols)
+
   samples <- tools::file_path_sans_ext(basename(list_coverage))
-  
+
   if (length(samples) != n) {
     samples <- paste0("sample_", seq_len(n))
   }
-  
-  colnames(ppinp)[-1:-3] <- paste0("sample_", samples)[seq_len(n)]
+
+  colnames(ppinp)[colnames(ppinp) %in% sample_cols] <- paste0("sample_", samples)[seq_len(n)]
   
   # Create GRanges
   for_range_pp <- GenomicRanges::makeGRangesFromDataFrame(
@@ -748,23 +770,32 @@ if (!is.null(annotation_file) && file.exists(annotation_file)) {
   # Rename columns before writing
   pp_output <- pp
 
-  if ("SYMBOL" %in% colnames(pp_output)) {
-  message("Removing SYMBOL from coverage output (for compute-annotation.R)")
-  pp_output <- pp_output %>% dplyr::select(-SYMBOL)
-  }
+  # if ("SYMBOL" %in% colnames(pp_output)) {
+  # message("Removing SYMBOL from coverage output (for compute-annotation.R)")
+  # pp_output <- pp_output %>% dplyr::select(-SYMBOL)
+  # }
 
   # 1. Rename first column from "seqnames" to "chromosome"
   colnames(pp_output)[1] <- "chromosome"
 
   # 2. Rename count columns to include filename prefix
   sample_names <- tools::file_path_sans_ext(basename(list_coverage))
-  count_cols <- colnames(pp_output)[-(1:3)]  # All columns except chr, start, end
 
-  # Create new column names with "count_" prefix
+  # Identify ONLY count columns (exclude coords AND SYMBOL)
+  coord_cols <- c("chromosome", "start", "end", "SYMBOL")
+  count_cols <- setdiff(colnames(pp_output), coord_cols)
+
+  # Verify we have the right number of columns
+  if (length(sample_names) != length(count_cols)) {
+    warning("Mismatch: ", length(count_cols), " count columns but ", 
+            length(sample_names), " sample names")
+  }
+
+  # Apply count_ prefix only to count columns
   new_count_names <- paste0("count_", sample_names)
+  colnames(pp_output)[colnames(pp_output) %in% count_cols] <- new_count_names[seq_along(count_cols)]
 
-  # Apply new names to count columns
-  colnames(pp_output)[4:ncol(pp_output)] <- new_count_names
+  message("Count columns renamed: ", paste(new_count_names, collapse=", "))
   # Write coverage file
   coverage_file <- file.path(myDir, paste0(timestamp, '.bed'))
   utils::write.table(
