@@ -361,6 +361,14 @@ coverage_input <- eventReactive(input$process_coverage, {
         pp <- Reduce(function(...) merge(..., by = c("seqnames", "pos", "end")), lst3)
         pp[is.na(pp)] <- 0
         colnames(pp)[1:3] <- c("seqnames", "start", "end")
+        # Fix column names: use actual sample names with count_ prefix
+        sample_names <- tools::file_path_sans_ext(basename(list_coverage()))
+        count_cols <- colnames(pp)[-(1:3)]  # All columns except chr, start, end
+
+        if (length(sample_names) == length(count_cols)) {
+        colnames(pp)[4:ncol(pp)] <- paste0("count_", sample_names)
+        cat("Renamed sample columns to:", paste(colnames(pp)[4:ncol(pp)], collapse=", "), "\n")
+        }
 
         # ← AGGIUNGI SYMBOL QUI
         pp_gr <- GenomicRanges::makeGRangesFromDataFrame(pp, keep.extra.columns = TRUE)
@@ -480,7 +488,14 @@ coverage_input <- eventReactive(input$process_coverage, {
         
         # Replace NA with 0 for missing coverage
         pp[is.na(pp)] <- 0
-        
+        # Fix column names: use actual sample names with count_ prefix
+        sample_names <- tools::file_path_sans_ext(basename(list_coverage()))
+        count_cols <- colnames(pp)[!colnames(pp) %in% c("seqnames", "start", "end", "SYMBOL")]
+
+        if (length(sample_names) == length(count_cols)) {
+        colnames(pp)[colnames(pp) %in% count_cols] <- paste0("count_", sample_names)
+        cat("Renamed sample columns to:", paste(paste0("count_", sample_names), collapse=", "), "\n")
+        }
         cat(paste("Merged result:", nrow(pp), "unique intervals\n"))
     }
     cat("\n=== COVERAGE PROCESSING COMPLETE ===\n")
@@ -544,26 +559,20 @@ stat_summ <- reactive({
     cat("\nDopo il rename:\n")
     cat("  Colonne in ppinp:", paste(colnames(ppinp), collapse=", "), "\n")
 
-    # Identify sample columns (everything except coords + annotation)
+    # Identify sample columns (already have count_ prefix from coverage_input)
     coord_cols <- c("chromosome", "start", "end", "SYMBOL")
-    sample_cols <- setdiff(colnames(ppinp), coord_cols)
+    sample_cols_with_prefix <- setdiff(colnames(ppinp), coord_cols)  # ["count_file1", "count_file2"]
+
+    # Remove count_ prefix for cleaner names
+    sample_cols <- sub("^count_", "", sample_cols_with_prefix)  # ["file1", "file2"]
+
+    # Rename columns in ppinp
+    colnames(ppinp)[colnames(ppinp) %in% sample_cols_with_prefix] <- sample_cols
+
     n <- length(sample_cols)
 
-    # Get true file names for mapping to columns (does not prepend "sample_")
-    samples <- name_sample()
-    if (length(samples) != n) {
-        warning(paste("Mismatch: found", n, "data columns but", length(samples), "sample names"))
-        samples <- sample_cols # fallback: use whatever columns present
-    }
-        
-    # STEP 4: ORA puoi usare le variabili nei cat()
-    cat("Prima di rinominare:\n")
-    cat("  Colonne originali:", paste(sample_cols, collapse=", "), "\n")
-    cat("  Nomi nuovi da assegnare:", paste(samples[seq_len(n)], collapse=", "), "\n")
-    
-    # Map columns to their respective sample names (no extra “sample_”)
-    colnames(ppinp)[colnames(ppinp) %in% sample_cols] <- samples[seq_len(n)]
-    sample_cols <- samples[seq_len(n)]
+    cat("Sample columns found:", paste(sample_cols, collapse=", "), "\n")
+    cat("Number of samples:", n, "\n\n")
 
     cat(paste("Input data:\n"))
     cat(paste("  Total intervals:", nrow(ppinp), "\n"))

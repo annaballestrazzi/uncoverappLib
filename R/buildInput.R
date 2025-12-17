@@ -612,7 +612,7 @@ if (type_coverage == "bam") {
     samples <- paste0("sample_", seq_len(n))
   }
 
-  colnames(ppinp)[colnames(ppinp) %in% sample_cols] <- paste0("sample_", samples)[seq_len(n)]
+  colnames(ppinp)[colnames(ppinp) %in% sample_cols] <- samples[seq_len(n)]
   
   # Create GRanges
   for_range_pp <- GenomicRanges::makeGRangesFromDataFrame(
@@ -646,7 +646,9 @@ if (type_coverage == "bam") {
                               relationship = "many-to-many")
   
   col_name <- colnames(merge_g)
-  col.sub <- col_name[grepl("sample_", col_name)]
+  # Trova colonne sample (esclude coordinate e SYMBOL)
+  coord_cols_stat <- c("chromosome", "start.x", "end.x", "start.y", "end.y", "SYMBOL", "chr", "start", "end", "width")
+  col.sub <- setdiff(col_name, coord_cols_stat)
   merge_g[col.sub] <- sapply(merge_g[col.sub], as.numeric)
   
   # Calculate interval widths (1-based: end - start + 1)
@@ -745,6 +747,13 @@ if (!is.null(annotation_file) && file.exists(annotation_file)) {
             by = "SYMBOL", 
             all.x = TRUE
           )
+          message("DEBUG: stat_summ columns: ", paste(colnames(stat_summ), collapse=", "))
+          message("DEBUG: stat_summ rows: ", nrow(stat_summ))
+          message("DEBUG: omim_gene columns: ", paste(colnames(omim_gene), collapse=", "))
+          message("DEBUG: SYMBOL in stat_summ? ", "SYMBOL" %in% colnames(stat_summ))
+          message("DEBUG: SYMBOL in omim_gene? ", "SYMBOL" %in% colnames(omim_gene))
+          message("DEBUG: First few rows of stat_summ:")
+          print(head(stat_summ, 3))
           
           message("Annotations added successfully")
           message(paste("Annotation took:", 
@@ -811,6 +820,8 @@ if (!is.null(annotation_file) && file.exists(annotation_file)) {
   
   # Write statistics file
   stats_file <- file.path(myDir, paste0(timestamp, '_statistical_summary.txt'))
+  # Remove "X" prefix from sample names (added by R for numeric-starting names)
+  stat_summ$sample <- sub("^X", "", stat_summ$sample)
   utils::write.table(
     x = stat_summ,
     file = stats_file,
