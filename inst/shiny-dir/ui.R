@@ -178,8 +178,6 @@ preprocess <- function() {
                                              ".bed",
                                              "text/comma-separated-values,text/plain",
                                              ".list")),
-
-                        hr(),
                         hr(),
                         actionButton("process_coverage", 
                                      "Process Coverage Files",
@@ -297,14 +295,17 @@ myHome <- function() {
              # ═══════════════════════════════════════════════════════════
              h4(strong("Calculate")),
              actionButton("calc_low_coverage", 
-                          "Calculate Low Coverage Regions",
-                          icon = icon("calculator"),
-                          style = "color: #fff; background-color: #5cb85c; border-color: #4cae4c; width: 100%; margin-bottom: 10px;"),
-             
+                            HTML("Calculate Low<br/>Coverage Regions"),
+                            icon = icon("calculator"),
+                            style = "color: #fff; background-color: #5cb85c; border-color: #4cae4c; 
+                                      width: 100%; margin-bottom: 10px; 
+                                      white-space: normal; height: auto; padding: 12px 10px;"),
              actionButton("calc_annotations", 
-                          "Calculate Annotations on Low Coverage",
+                          HTML("Calculate Annotations<br/>On Low Coverage"),
                           icon = icon("dna"),
-                          style = "color: #fff; background-color: #f0ad4e; border-color: #eea236; width: 100%; margin-bottom: 10px;"),
+                          style = "color: #fff; background-color: #5cb85c; border-color: #4cae4c; 
+                                      width: 100%; margin-bottom: 10px; 
+                                      white-space: normal; height: auto; padding: 12px 10px;"),
              
              shinyBS::bsButton("remove", label = "Refresh", icon = icon("refresh"),
                                style = "default", size = "small"),
@@ -491,6 +492,21 @@ myabout <- function() {
            style=mdStyle
   )
 }
+myQuickStart <- function() {
+  tabPanel("Quick Start",
+           includeMarkdown(system.file("extdata", "QUICK_START.md", 
+                                      package = "uncoverappLib")),
+           style = mdStyle
+  )
+}
+
+myUserGuide <- function() {
+  tabPanel("User Guide",
+           includeMarkdown(system.file("extdata", "USER_GUIDE.md", 
+                                      package = "uncoverappLib")),
+           style = mdStyle
+  )
+}
 
 ui <- shinyUI(
   tagList(
@@ -498,11 +514,11 @@ ui <- shinyUI(
     waiter::use_waiter(),
     shiny::tags$head(
       # Import font Inter (usato da Notion)
-      shiny::tags$link(
-        rel = "stylesheet",
-        href = "https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap"
-      ),
-      
+      shiny::tags$style(HTML("
+        * {
+          font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica Neue', Arial, sans-serif !important;
+        }
+      ")),
       shiny::tags$style(HTML("
         /* ============================================ */
         /* RESET BASE - Applica Inter a TUTTO */
@@ -906,7 +922,9 @@ ui <- shinyUI(
                  preprocess(),
                  myHome(),
                  myTab1(),
-                 myTab2()
+                 myTab2(),
+                 myQuickStart(),
+                 myUserGuide()
                  #myabout()
       ),
       

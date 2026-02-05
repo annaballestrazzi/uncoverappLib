@@ -68,20 +68,25 @@ intBED <- eventReactive(input$calc_annotations, {
       # Filter for .gz file (not .tbi)
       gz_files <- data_files[grepl("\\.gz$", data_files) & !grepl("\\.tbi$", data_files)]
       
-      if (length(gz_files) > 0) {
-        file.name <- gz_files[1]
-        cat("Using annotation file:", file.name, "\n")
-      } else {
-        stop("ERROR: No .gz annotation file found for ", input$UCSC_Genome)
-      }
+      validate(
+        need(length(gz_files) > 0, 
+            paste("No annotation files found for", input$UCSC_Genome))
+      )
+      file.name <- gz_files[1]
+      cat("Using annotation file:", file.name, "\n")
     } else {
-      stop("ERROR: Cannot retrieve annotation files for ", input$UCSC_Genome)
+      validate(
+        need(FALSE, 
+            paste("No annotation files found for", input$UCSC_Genome))
+      )
     }
   }
   
-  if (is.null(file.name) || !file.exists(file.name)) {
-    stop("ERROR: Annotation file not found: ", file.name)
-  }
+  validate(
+    need(!is.null(file.name) && file.exists(file.name), 
+        paste("⚠️ File di annotazione non trovato:", file.name))
+  )
+  
   
   cat("Final annotation file:", file.name, "\n")
   
@@ -334,7 +339,7 @@ if (nrow(bedA_norm) > 10000 || nrow(bedB_norm) > 10000) {
 
 
   
-  # ✅ 5. FINE: NASCONDI WAITER E NOTIFICA
+  # 5. FINE: NASCONDI WAITER E NOTIFICA
   waiter::waiter_hide()
   shinyjs::enable("calc_annotations")
   

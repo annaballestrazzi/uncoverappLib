@@ -2,7 +2,6 @@
 # compute-reactiveDF.R - GESTIONE DATI BASE
 # ============================================================================
 
-
 # Database reference genome
 txdb <- reactive({
   if (input$UCSC_Genome == "hg19") {
@@ -12,39 +11,81 @@ txdb <- reactive({
   }
 })
 
-
 # ============================================================================
 # DATA SOURCE MANAGEMENT
 # ============================================================================
 
-
 data_source <- reactiveVal("none")
 raw_upload <- reactiveVal(NULL)
-
 
 observeEvent(input$file1, {
   req(input$file1)
   raw_upload(input$file1)
   data_source("manual")
 })
-
-
-observeEvent(input$process_coverage, {  
-  req(coverage_input())
-  data_source("pileup")
+observeEvent(input$pileup, {
+  cat("\n=== PILEUP BUTTON PRESSED ===\n")
+  
+  # Check if coverage data exists
+  cov_data <- tryCatch({
+    coverage_input()
+  }, error = function(e) {
+    NULL
+  })
+  
+  if (!is.null(cov_data) && nrow(cov_data) > 0) {
+    data_source("pileup")
+    showNotification(
+      "Coverage data loaded successfully",
+      type = "message",
+      duration = 3
+    )
+  } else {
+    showNotification(
+      "No coverage data available. Please go to 'Coverage Analysis' and press 'Process Coverage' first.",
+      type = "warning",
+      duration = 5
+    )
+  }
 })
-
+observeEvent(input$process_coverage, {  
+  # Reset state
+  data_source("none")
+  
+  # Try to get coverage data
+  cov_data <- tryCatch({
+    coverage_input()
+  }, error = function(e) {
+    showNotification(
+      paste("⚠️ Errore elaborazione coverage:", e$message),
+      type = "error",
+      duration = 10
+    )
+    return(NULL)
+  })
+  
+  # Set data source only if successful
+  if (!is.null(cov_data) && nrow(cov_data) > 0) {
+    data_source("pileup")
+  } else {
+    showNotification(
+      "⚠️ Coverage elaboration failed. Check files and retry.",
+      type = "error",
+      duration = 5
+    )
+  }
+})
 
 # ============================================================================
 # MAIN DATA REACTIVE
 # ============================================================================
-
 
 mydata <- reactive({
   source <- data_source()
   
   if (source == "none") return(NULL)
   
+  # ========== MANUAL UPLOAD ==========
   if (source == "manual") {
     req(raw_upload())
     file_info <- raw_upload()
@@ -52,23 +93,81 @@ mydata <- reactive({
     cat("\n=== PROCESSING MANUAL UPLOAD ===\n")
     cat("File:", file_info$name, "\n")
     
-    tmp <- read.table(file_info$datapath,
-                      header = input$header, 
-                      stringsAsFactors = FALSE)
+    # Reading file with error handling
+    tmp <- tryCatch({
+      read.table(file_info$datapath,
+                 header = input$header, 
+                 stringsAsFactors = FALSE)
+    }, error = function(e) {
+      validate(need(FALSE, 
+        paste("Impossibile leggere il file. Verifica che sia un file di testo valido.\nErrore:", e$message)))
+    })
     
     cat("Raw dimensions:", dim(tmp), "\n")
     cat("Original columns:", paste(colnames(tmp), collapse=", "), "\n")
     
-    # Standardize first 3 columns
-    if (ncol(tmp) >= 3) {
-      colnames(tmp)[1:3] <- c("chromosome", "start", "end")
-    }
+    # Column validation
+    validate(
+      need(ncol(tmp) >= 3,
+           paste("Il file deve avere almeno 3 colonne (chromosome, start, end).",
+                 "\nTrovate:", ncol(tmp), "colonne.",
+                 "\nSuggerimento: verifica il separatore (tab, virgola, spazio) e se hai selezionato 'Header' correttamente."))
+    )
     
-    tmp$chromosome <- paste0("chr", sub("^chr", "", as.character(tmp$chromosome)))
-    tmp$start <- as.integer(tmp$start)
-    tmp$end <- as.integer(tmp$end)
+    # Rename first 3 columns
+    colnames(tmp)[1:3] <- c("chromosome", "start", "end")
     
-    # ✅ FIX: Rename ALL columns starting with X to sample_ (in one go!)
+    # Validate columns exist
+    validate(
+      need("chromosome" %in% colnames(tmp), "Errore interno: colonna chromosome mancante"),
+      need("start" %in% colnames(tmp), "Errore interno: colonna start mancante"),
+      need("end" %in% colnames(tmp), "Errore interno: colonna end mancante")
+    )
+    
+    # Standardize chromosome names
+    tmp$chromosome <- tryCatch({
+      paste0("chr", sub("^chr", "", as.character(tmp$chromosome)))
+    }, error = function(e) {
+      validate(need(FALSE, "Errore nella colonna chromosome. Deve contenere nomi di cromosomi (es. chr1, chr22, X)"))
+    })
+    
+    # Convert start to integer with validation
+    tmp$start <- tryCatch({
+      as.integer(tmp$start)
+    }, error = function(e) {
+      validate(need(FALSE, "La colonna 'start' deve contenere solo numeri interi"))
+    })
+    
+    # Check if conversion produced too many NAs
+    validate(
+      need(sum(is.na(tmp$start)) < nrow(tmp) * 0.1,
+           paste("La colonna 'start' contiene troppi valori non numerici.",
+                 "\nRighe con errori:", sum(is.na(tmp$start)), "su", nrow(tmp)))
+    )
+    
+    # Convert end to integer with validation
+    tmp$end <- tryCatch({
+      as.integer(tmp$end)
+    }, error = function(e) {
+      validate(need(FALSE, "La colonna 'end' deve contenere solo numeri interi"))
+    })
+    
+    # Check if conversion produced too many NAs
+    validate(
+      need(sum(is.na(tmp$end)) < nrow(tmp) * 0.1,
+           paste("La colonna 'end' contiene troppi valori non numerici.",
+                 "\nRighe con errori:", sum(is.na(tmp$end)), "su", nrow(tmp)))
+    )
+    
+    # Validate that start < end
+    invalid_intervals <- sum(tmp$start >= tmp$end, na.rm = TRUE)
+    validate(
+      need(invalid_intervals == 0,
+           paste("Trovati", invalid_intervals, "intervalli con start >= end.",
+                 "\nGli intervalli devono avere start < end."))
+    )
+    
+    # Rename sample columns
     if (ncol(tmp) >= 4) {
       for (i in 4:ncol(tmp)) {
         col_name <- colnames(tmp)[i]
@@ -82,7 +181,6 @@ mydata <- reactive({
           colnames(tmp)[i] <- paste0("sample_", col_name)
         }
         
-        # Convert to integer
         # Convert to numeric and verify
         tmp[[i]] <- suppressWarnings(as.numeric(tmp[[i]]))
         
@@ -97,23 +195,42 @@ mydata <- reactive({
     return(tmp)
   }
   
+  # ========== PILEUP DATA ==========
   if (source == "pileup") {
-    req(coverage_input())
+    cov_data <- coverage_input()
+    
+    validate(
+      need(!is.null(cov_data), 
+          "⚠️ No coverage data available. Be sure to have done:
+          • Uploaded file BAM/BED in 'Coverage Analysis'
+          • Uploaded gene names or file target
+          • Pressed 'Process Coverage' and waited for completion"),
+      need(is.data.frame(cov_data) || is.matrix(cov_data),
+          "⚠️ Data format not recognized"),
+      need(nrow(cov_data) > 0,
+          "⚠️ No coverage regions found"),
+      need(ncol(cov_data) >= 3,
+          "⚠️ Incomplete data: need at least 3 columns")
+    )
     
     cat("\n=== PROCESSING PILEUP DATA ===\n")
-    
-    tmp_pileup <- coverage_input()
+    tmp_pileup <- cov_data
     cat("Coverage dimensions:", dim(tmp_pileup), "\n")
+    
+    # Remove SYMBOL if present
     if ("SYMBOL" %in% colnames(tmp_pileup)) {
-        cat("Removing SYMBOL column (only needed for stat_summ)\n")
-        tmp_pileup <- tmp_pileup %>% dplyr::select(-SYMBOL)
+      cat("Removing SYMBOL column (only needed for stat_summ)\n")
+      tmp_pileup <- tmp_pileup %>% dplyr::select(-SYMBOL)
     }
+    
+    # Standardize columns
     colnames(tmp_pileup)[1:3] <- c("chromosome", "start", "end")
     tmp_pileup$chromosome <- paste0("chr", sub("^chr", "", as.character(tmp_pileup$chromosome)))
     tmp_pileup$chromosome <- as.character(tmp_pileup$chromosome)
     tmp_pileup$start <- as.integer(tmp_pileup$start)
     tmp_pileup$end <- as.integer(tmp_pileup$end)
     
+    # Rename sample columns
     data_cols <- setdiff(colnames(tmp_pileup), c("chromosome", "start", "end"))
     ncols <- length(data_cols)
     samples <- name_sample()
@@ -146,7 +263,6 @@ mydata <- reactive({
   
   return(NULL)
 })
-
 
 # ============================================================================
 # SAMPLE EXTRACTION (pure function)
@@ -193,7 +309,6 @@ get_sample_data <- function(dat, sample_name) {
 # HELPER: Get chromosome from gene name
 # ============================================================================
 
-
 get_chromosome_from_gene <- function(gene_name, genome = "hg19") {
   tryCatch({
     gene_info <- suppressMessages(
@@ -217,28 +332,26 @@ get_chromosome_from_gene <- function(gene_name, genome = "hg19") {
   })
 }
 
-
 # ============================================================================
 # FILTERING REACTIVES (CONTROLLED BY ACTION BUTTON)
 # ============================================================================
 
-
 filtered_low <- eventReactive(input$calc_low_coverage, {
   cat("\n=== BUTTON PRESSED: calc_low_coverage ===\n")
   
-  # ✅ 1. MOSTRA WAITER
+  # Show waiter
   show_uncoverapp_waiter(
     message = "Calculating low coverage regions...",
     detail = "This may take a few minutes"
   )
   
-  # ✅ 2. DISABILITA BOTTONE
+  # Disable button
   shinyjs::disable("calc_low_coverage")
   
-  # ✅ 3. CAMBIA TAB
+  # Change tab
   updateTabsetPanel(session, "tabSet", selected = "Low-coverage positions")
   
-  # ✅ 4. VALIDAZIONE CON ERROR HANDLING
+  # Validation with error handling
   if (is.null(input$coverage_co) || input$coverage_co == "") {
     waiter::waiter_hide()
     shinyjs::enable("calc_low_coverage")
@@ -281,9 +394,9 @@ filtered_low <- eventReactive(input$calc_low_coverage, {
     
     cat("Result:", nrow(result), "rows\n")
   }
-  # ══════════════════════════════════════════════════════════════════════
+  # ══════════════════════════════════════════════════════════════════════════
   # BRANCH 2: GENE NAME
-  # ══════════════════════════════════════════════════════════════════════
+  # ══════════════════════════════════════════════════════════════════════════
   else if (input$filter_by == "gene") {
     if (is.null(input$Gene_name) || input$Gene_name == "") {
       waiter::waiter_hide()
@@ -294,77 +407,29 @@ filtered_low <- eventReactive(input$calc_low_coverage, {
   
     cat("Mode: GENE | Gene:", input$Gene_name, "\n")
   
-    # Seleziona il TxDb corretto in base al genome
-    txdb_to_use <- if (input$UCSC_Genome == "hg19") {
-      TxDb.Hsapiens.UCSC.hg19.knownGene::TxDb.Hsapiens.UCSC.hg19.knownGene
-    } else {
-      TxDb.Hsapiens.UCSC.hg38.knownGene::TxDb.Hsapiens.UCSC.hg38.knownGene
-    }
-  
-    cat("Using genome:", input$UCSC_Genome, "\n")
-  
-    # Ottieni coordinate ESATTE del gene
+    # ✅ USE PRE-CALCULATED COORDINATES FROM gene_coordinates()
     gene_coords <- tryCatch({
-      # Step 1: Get ENTREZID from gene symbol
-      entrez_info <- AnnotationDbi::select(
-        org.Hs.eg.db,
-        keys = input$Gene_name,
-        columns = "ENTREZID",
-        keytype = "SYMBOL"
-      )
-    
-      if (is.null(entrez_info) || nrow(entrez_info) == 0) {
-        cat("Gene not found in org.Hs.eg.db\n")
-        waiter::waiter_hide()
-        shinyjs::enable("calc_low_coverage")
-        showNotification(paste("Gene not found:", input$Gene_name), type = "error", duration = 5)
-        return(NULL)
-      }
-    
-      entrez_id <- entrez_info$ENTREZID[1]
-      cat("ENTREZID:", entrez_id, "\n")
-    
-      # Step 2: Get coordinates from correct TxDb
-      gene_info <- AnnotationDbi::select(
-        txdb_to_use,
-        keys = entrez_id,
-        columns = c("TXCHROM", "TXSTART", "TXEND"),
-        keytype = "GENEID"
-      )
-    
-      if (!is.null(gene_info) && nrow(gene_info) > 0) {
-        chr <- unique(gene_info$TXCHROM)[1]
-        if (!grepl("^chr", chr)) chr <- paste0("chr", chr)
-      
-        list(
-          chr = chr,
-          start = min(gene_info$TXSTART, na.rm = TRUE),
-          end = max(gene_info$TXEND, na.rm = TRUE)
-        )
-      } else {
-        NULL
-      }
+      gene_coordinates()
     }, error = function(e) {
-      cat("ERROR getting gene coordinates:", e$message, "\n")
-      NULL
+      cat("ERROR: Could not get gene_coordinates():", e$message, "\n")
+      return(NULL)
     })
   
-    # Applica filtro coordinate gene
     if (is.null(gene_coords)) {
       waiter::waiter_hide()
       shinyjs::enable("calc_low_coverage")
       showNotification(
-        paste("Could not find coordinates for gene:", input$Gene_name),
+        paste("Please lookup gene coordinates first using 'Lookup UCSC Gene' button"),
         type = "error",
         duration = 5
       )
       return(data.frame())
     }
   
-    cat("Gene region:", gene_coords$chr, ":", 
+    cat("Using global gene coordinates:", gene_coords$chr, ":", 
         gene_coords$start, "-", gene_coords$end, "\n")
   
-    # Filtra per gene + threshold
+    # Filter by gene + threshold
     result <- if (identical(thr, "all")) {
       dplyr::filter(
         df,
@@ -406,7 +471,6 @@ filtered_low <- eventReactive(input$calc_low_coverage, {
   # ══════════════════════════════════════════════════════════════════════
   # BRANCH 4: REGION COORDINATES
   # ══════════════════════════════════════════════════════════════════════
-  # REGION overlap or exact match filter
   else if (input$filter_by == "region") {
     req(input$query_Database)
   
@@ -429,7 +493,6 @@ filtered_low <- eventReactive(input$calc_low_coverage, {
     }
   
     if (identical(thr, "all")) {
-      # PROVA match esatto
       result_exact <- dplyr::filter(
         df,
         chromosome == region_parts$chr,
@@ -469,7 +532,6 @@ filtered_low <- eventReactive(input$calc_low_coverage, {
   
     cat("Result:", nrow(result), "rows\n")
   }
-
   
   # ══════════════════════════════════════════════════════════════════════
   # FALLBACK
@@ -482,7 +544,7 @@ filtered_low <- eventReactive(input$calc_low_coverage, {
   }
   
   # ══════════════════════════════════════════════════════════════════════
-  # FINAL: Hide waiter and notify (for all successful branches)
+  # FINAL: Hide waiter and notify
   # ══════════════════════════════════════════════════════════════════════
   waiter::waiter_hide()
   shinyjs::enable("calc_low_coverage")
@@ -505,13 +567,11 @@ filtered_low <- eventReactive(input$calc_low_coverage, {
   
 }, ignoreNULL = TRUE, ignoreInit = TRUE)
 
-
 # ============================================================================
-# FILTERED HIGH (for completeness, also button-triggered)
+# FILTERED HIGH
 # ============================================================================
 
-
-filtered_high <- filtered_high <- reactive({
+filtered_high <- reactive({
   cat("\n=== FILTERED_HIGH START ===\n")
   
   cat("Checking requirements...\n")
@@ -520,59 +580,27 @@ filtered_high <- filtered_high <- reactive({
   
   cat("Filter by:", input$filter_by, "\n")
   
-  # Solo per gene mode
+  # Only for gene mode
   if (input$filter_by != "gene") {
     cat("Not gene mode, returning empty\n")
     return(data.frame())
   }
   
-  # CRITICAL FIX: Use SAME LOGIC as filtered_low() to get gene region data
   cat("Getting sample data from mydata()...\n")
   df <- get_sample_data(mydata(), input$Sample)
-  req(df)
+
+  validate(
+    need(!is.null(df) && nrow(df) > 0,
+        "⚠️ No data available for the selected sample.")
+  )
+  
   cat("Sample data OK, rows:", nrow(df), "\n")
   
-  # Get gene coordinates (SAME as in filtered_low)
-  txdb_to_use <- if (input$UCSC_Genome == "hg19") {
-    TxDb.Hsapiens.UCSC.hg19.knownGene::TxDb.Hsapiens.UCSC.hg19.knownGene
-  } else {
-    TxDb.Hsapiens.UCSC.hg38.knownGene::TxDb.Hsapiens.UCSC.hg38.knownGene
-  }
-  
+  # ✅ USE PRE-CALCULATED COORDINATES FROM gene_coordinates()
   gene_coords <- tryCatch({
-    entrez_info <- AnnotationDbi::select(
-      org.Hs.eg.db,
-      keys = input$Gene_name,
-      columns = "ENTREZID",
-      keytype = "SYMBOL"
-    )
-    
-    if (is.null(entrez_info) || nrow(entrez_info) == 0) {
-      return(NULL)
-    }
-    
-    entrez_id <- entrez_info$ENTREZID[1]
-    gene_info <- AnnotationDbi::select(
-      txdb_to_use,
-      keys = entrez_id,
-      columns = c("TXCHROM", "TXSTART", "TXEND"),
-      keytype = "GENEID"
-    )
-    
-    if (!is.null(gene_info) && nrow(gene_info) > 0) {
-      chr <- unique(gene_info$TXCHROM)[1]
-      if (!grepl("^chr", chr)) chr <- paste0("chr", chr)
-      
-      list(
-        chr = chr,
-        start = min(gene_info$TXSTART, na.rm = TRUE),
-        end = max(gene_info$TXEND, na.rm = TRUE)
-      )
-    } else {
-      NULL
-    }
+    gene_coordinates()
   }, error = function(e) {
-    cat("ERROR getting gene coordinates:", e$message, "\n")
+    cat("ERROR: Could not get gene_coordinates():", e$message, "\n")
     return(NULL)
   })
   
@@ -590,8 +618,7 @@ filtered_high <- filtered_high <- reactive({
   thr <- input$coverage_co
   cat("Threshold for HIGH coverage: >", thr, "\n")
   
-  # Filter for ALL coverage ABOVE threshold in ENTIRE gene region
-  # This gives us the "high coverage" regions to display in blue on the plot
+  # Filter for coverage ABOVE threshold in gene region
   result <- dplyr::filter(df, 
                           chromosome == chr,
                           end >= start_region, 
@@ -602,14 +629,11 @@ filtered_high <- filtered_high <- reactive({
   cat("=== FILTERED_HIGH COMPLETE ===\n")
   
   return(result)
-  
 })
-
 
 # ============================================================================
 # ALIAS per compatibilità con compute-annotation.R
 # ============================================================================
-
 
 filtered_low_nucl <- filtered_low
 filtered_high_nucl <- filtered_high

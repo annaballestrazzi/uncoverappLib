@@ -35,25 +35,84 @@ coord= eventReactive(input$ucsc_lookup,{
   }
   
   cat("Found ENTREZID:", ID, "\n")
-  
-  all_gene= data.frame(genes(txdb()))
-  pre= do.call(rbind, lapply(ID, function(x) data.frame(
-    subset(all_gene, all_gene$gene_id == x), stringsAsFactors = FALSE)))
-  
-  colnames(pre)[6]= 'ENTREZID'
-  info= merge(pre, my_gene_name)
-  
-  cat("Gene coordinates:\n")
-  print(head(info[, c("seqnames", "start", "end", "SYMBOL")], 3))
-  
-  shinyjs::enable("ucsc_lookup")
-  shinyjs::hide("text1")
-  
-  cat("=== COORD() COMPLETE ===\n\n")
-  
-  return(info)
-})
 
+  gene_coords <- AnnotationDbi::select(
+    txdb(),
+    keys = ID,
+    columns = c("TXCHROM", "TXSTART", "TXEND", "TXNAME"),
+    keytype = "GENEID"
+  )
+
+  validate(
+    need(!is.null(gene_coords) && nrow(gene_coords) > 0,
+        paste("Gene not found in", input$UCSC_Genome, "database"))
+  )
+
+  # ============================================================================
+  # FILTER OUT ALTERNATIVE CONTIGS (chr22_fix, chr1_random, etc.)
+  # Same method used in compute-plots.R and compute-preprocess.R
+  # ============================================================================
+  cat("Raw transcripts:", nrow(gene_coords), "\n")
+  cat("Chromosomes found:", paste(unique(gene_coords$TXCHROM), collapse=", "), "\n")
+  
+  # Filter out any chromosome with underscore (alternative contigs)
+  gene_coords_clean <- gene_coords %>%
+    dplyr::filter(!grepl("_", TXCHROM))
+  
+  cat("After filtering alt contigs:", nrow(gene_coords_clean), "transcripts\n")
+  
+  validate(
+    need(nrow(gene_coords_clean) > 0,
+        "All transcripts are on alternative contigs - cannot use this gene")
+  )
+  
+  cat("Clean coordinate range:", min(gene_coords_clean$TXSTART), "-", 
+      max(gene_coords_clean$TXEND), "\n\n")
+  
+  # ============================================================================
+  
+
+  info <- gene_coords_clean %>%
+    dplyr::group_by(GENEID) %>%
+    dplyr::summarise(
+      seqnames = unique(TXCHROM)[1],
+      start = min(TXSTART, na.rm = TRUE),
+      end = max(TXEND, na.rm = TRUE),
+      transcript_ids = list(unique(TXNAME)),
+      .groups = "drop"
+    ) %>%
+    dplyr::rename(ENTREZID = GENEID) %>%
+    dplyr::inner_join(my_gene_name, by = "ENTREZID") %>%
+    dplyr::slice(1)  # ✅ Take only first row (removes duplicates from multiple ENSEMBL IDs)
+
+  cat("Gene coordinates:\n")
+  print(info[, c("seqnames", "start", "end", "SYMBOL")])
+    
+    shinyjs::enable("ucsc_lookup")
+    shinyjs::hide("text1")
+    
+    cat("=== COORD() COMPLETE ===\n\n")
+    
+    return(info)
+  })
+  # ============================================================================
+# GLOBAL GENE COORDINATES - Calculated once, used everywhere
+# ============================================================================
+gene_coordinates <- reactive({
+  # Require that coord() has been called
+  coord_data <- coord()
+  
+  if (is.null(coord_data) || nrow(coord_data) == 0) {
+    return(NULL)
+  }
+  
+  list(
+    chr = as.character(coord_data$seqnames[1]),
+    start = coord_data$start[1],
+    end = coord_data$end[1],
+    symbol = coord_data$SYMBOL[1]
+  )
+})
 
 
 observeEvent(input$ucsc_lookup, {
@@ -95,7 +154,7 @@ observeEvent(input$ucsc_lookup, {
   x <- as.data.frame(coord_data)
   Chrom <- as.character(x$seqnames[1])
   
-  cat("✅ Auto-updating Chromosome input to:", Chrom, "\n")
+  cat("Auto-updating Chromosome input to:", Chrom, "\n")
   
   updateTextInput(session, "Chromosome", value = Chrom)
   
@@ -107,39 +166,6 @@ Chromosome<- reactive({
   xc= as.character(input$Chromosome)
   return(xc)
 })
-
-# Chromosome <- reactive({
-#   # Se filtro per gene, calcola cromosoma dal gene
-#   if (input$filter_by == "gene" && !is.null(input$Gene_name) && input$Gene_name != "") {
-#     chr <- tryCatch({
-#       txdb_to_use <- if (input$UCSC_Genome == "hg19") {
-#         TxDb.Hsapiens.UCSC.hg19.knownGene::TxDb.Hsapiens.UCSC.hg19.knownGene
-#       } else {
-#         TxDb.Hsapiens.UCSC.hg38.knownGene::TxDb.Hsapiens.UCSC.hg38.knownGene
-#       }
-      
-#       entrez_info <- AnnotationDbi::select(org.Hs.eg.db, keys = input$Gene_name,
-#                                            columns = "ENTREZID", keytype = "SYMBOL")
-      
-#       if (!is.null(entrez_info) && nrow(entrez_info) > 0) {
-#         gene_info <- AnnotationDbi::select(txdb_to_use, keys = entrez_info$ENTREZID[1],
-#                                            columns = "TXCHROM", keytype = "GENEID")
-        
-#         if (!is.null(gene_info) && nrow(gene_info) > 0) {
-#           chr <- unique(gene_info$TXCHROM)[1]
-#           if (!grepl("^chr", chr)) chr <- paste0("chr", chr)
-#           return(chr)
-#         }
-#       }
-#       NULL
-#     }, error = function(e) NULL)
-    
-#     if (!is.null(chr)) return(chr)
-#   }
-  
-#   # Fallback: input manuale
-#   return(as.character(input$Chromosome))
-# })
 
 
 observeEvent(input$remove,{

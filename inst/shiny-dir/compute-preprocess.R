@@ -81,9 +81,10 @@ validated_genes_data <- reactive({
       cat("\n")
    }
    
-   if (nrow(my_gene_name) == 0) {
-      stop("ERROR: No valid genes found in org.Hs.eg.db.")
-   }
+    validate(
+    need(nrow(my_gene_name) > 0, 
+        "No valid gene found in org.Hs.eg.db. Verify the entered gene names.")
+    )
    
    cat(paste("Stage 1 result:", nrow(my_gene_name), "mappings from", 
              length(found_genes_stage1), "genes\n\n"))
@@ -114,9 +115,10 @@ validated_genes_data <- reactive({
    my_gene_name <- my_gene_name %>%
       dplyr::filter(ENTREZID %in% valid_entrez_ids)
    
-   if (length(valid_entrez_ids) == 0) {
-      stop("ERROR: No genes passed validation.")
-   }
+   validate(
+        need(length(valid_entrez_ids) > 0, 
+        "No gene found in the selected reference genome. Try changing the genome (hg19/hg38).")
+   )
    
    cat(paste("Stage 2 result:", length(valid_entrez_ids), "validated genes\n"))
    
@@ -187,9 +189,10 @@ for_bed <- reactive({
       bed_data <- bed_data %>% dplyr::filter(!grepl("_", chr))
       cat("After alt contig filter:", nrow(bed_data), "intervals (removed alt contigs)\n")
       
-      if (nrow(bed_data) == 0) {
-         stop("ERROR: All target regions filtered out (only alt contigs present)!")
-      }
+      validate(
+        need(nrow(bed_data) > 0, 
+            "all regions target are on alternative contigs. The BED file must contain regions on the main chromosomes (chr1-22, X, Y).")
+    )
       
       return(bed_data)
    }
@@ -220,9 +223,10 @@ for_bed <- reactive({
     cat("DEBUG: pre_list has", length(pre_list), "non-NULL elements\n")
     
     # Check se ci sono dati
-    if (length(pre_list) == 0) {
-        stop("No valid transcript coordinates found for any gene!")
-    }
+    validate(
+        need(length(pre_list) > 0, 
+        "No coordinates found for the entered genes. Verify that the genes exist in the selected genome.")
+    )
    
    # Combina tutto in una volta (molto più veloce di rbind iterativo)
    pre <- dplyr::bind_rows(pre_list) %>%
@@ -326,9 +330,10 @@ coverage_input <- eventReactive(input$process_coverage, {
             cat(paste("Target chromosomes:", length(target_chrs), "\n"))
             cat(paste("Available overlap:", length(available_chrs), "\n\n"))
     
-            if (length(available_chrs) == 0) {
-                stop("No chromosome overlap between BAM and genes!")
-            }
+            validate(
+                need(length(available_chrs) > 0, 
+                    "No chromosome overlap between BAM files and requested genes. Verify that the BAM files have data for the selected genes.")
+            )
     
             for_grange_filtered <- for_grange[
                 as.character(GenomicRanges::seqnames(for_grange)) %in% available_chrs
@@ -391,6 +396,13 @@ coverage_input <- eventReactive(input$process_coverage, {
             file <- list_coverage()[idx]
             cat(paste("Sample", idx, ":", basename(file), "\n"))
             
+            # ✅ VALIDAZIONE QUI DENTRO (dove 'file' esiste)
+            validate(
+                need(file.exists(file),
+                    paste("⚠️ File not found:", file, 
+                        "\nVerify that the 'BAM/BED list' file contains full paths, not just filenames."))
+            )
+            
             df <- read.table(
                 file, 
                 header = FALSE,
@@ -434,7 +446,6 @@ coverage_input <- eventReactive(input$process_coverage, {
             cat(paste("  Overlapping intervals:", length(unique(queryHits(overlaps))), "\n"))
             
             # CRITICAL FIX: Use pintersect to trim AND preserve metadata
-            # pintersect trims each query interval to the overlapping subject intervals
             df_gr_overlapping <- df_gr[queryHits(overlaps)]
             for_grange_overlapping <- for_grange[subjectHits(overlaps)]
             
@@ -459,14 +470,15 @@ coverage_input <- eventReactive(input$process_coverage, {
             cat(paste("  Final intervals:", nrow(df_trimmed), "\n\n"))
             
             return(df_trimmed)
-        })
+        })  # ✅ CHIUDI IL LAPPLY QUI!
         
         # Remove empty dataframes
         df_list <- df_list[sapply(df_list, nrow) > 0]
         
-        if (length(df_list) == 0) {
-            stop("ERROR: No coverage data overlaps with target regions!")
-        }
+        validate(
+            need(length(df_list) > 0, 
+                "⚠️ No coverage data overlaps with target regions!")
+        )
         
         cat(paste("Merging", length(df_list), "trimmed coverage files...\n"))
         
@@ -505,9 +517,10 @@ coverage_input <- eventReactive(input$process_coverage, {
     cat(paste("\nFinal coverage dimensions:", nrow(pp), "intervals x", ncol(pp)-4, "samples\n"))
    
     # Verify SYMBOL column
-    if (!"SYMBOL" %in% colnames(pp)) {
-        stop("ERROR: Coverage missing SYMBOL column!")
-    }
+    validate(
+        need("SYMBOL" %in% colnames(pp), 
+            " Internal error: incomplete coverage data. Please try again.")
+    )
 
     # Check for missing genes
     target_genes <- unique(for_grange$SYMBOL)
@@ -546,13 +559,25 @@ stat_summ <- reactive({
     if (is.null(list_coverage())) return(NULL)
     if (!is.null(no_entrID()) && nrow(no_entrID()) != 0) return(no_entrID())
     
-    # ✅ FIX: Assicurati che coverage_input sia stato calcolato
-    req(coverage_input())
+    # Assicurati che coverage_input sia stato calcolato
+    cov_data <- coverage_input()
 
+    validate(
+        need(!is.null(cov_data), 
+            "No data of coverage available. Go to 'Coverage Analysis', upload BAM/BED files and click 'Process Coverage'."),
+        need(nrow(cov_data) > 0,
+            "Coverage calculated but no data found.")
+    )
     cat("\n=== STATISTICS CALCULATION ===\n")
-    ppinp <- as.data.frame(coverage_input())
-    if (!"SYMBOL" %in% colnames(ppinp)) stop("ERROR: Coverage data missing SYMBOL column! Check coverage_input()")
+    ppinp <- as.data.frame(cov_data)
+    # req(coverage_input())
 
+    # cat("\n=== STATISTICS CALCULATION ===\n")
+    # ppinp <- as.data.frame(coverage_input())
+    validate(
+        need("SYMBOL" %in% colnames(ppinp), 
+        "Internal error: incomplete coverage data. Please try again.")
+    )
 
     # RINOMINA
     colnames(ppinp)[colnames(ppinp) == "seqnames"] <- "chromosome"

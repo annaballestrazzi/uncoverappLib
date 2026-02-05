@@ -14,6 +14,17 @@ server <- function (input, output, session){
     require(waiter) 
   })
 
+  # Reset app state on error
+  session$onSessionEnded(function() {
+    # Reset reactive values quando la sessione termina
+    tryCatch({
+      data_source("none")
+      raw_upload(NULL)
+    }, error = function(e) {
+      # Ignore errors during cleanup
+    })
+  })
+
   options(shiny.maxRequestSize=30*1024^2)
     # ============================================================================
   # LOAD OMIM GENE LIST (caricato UNA SOLA VOLTA per tutta la sessione)
@@ -25,7 +36,7 @@ server <- function (input, output, session){
     OMIM_DATA <- read.table(omim_file, header = TRUE, sep = "\t", 
                             stringsAsFactors = FALSE, quote = "", fill = TRUE)
     OMIM_GENES <- unique(OMIM_DATA$SYMBOL)
-    cat("✓ Loaded", length(OMIM_GENES), "OMIM genes from database\n")
+    cat("âœ“ Loaded", length(OMIM_GENES), "OMIM genes from database\n")
   } else {
     cat("WARNING: OMIM file not found, OMIM highlighting disabled\n")
     OMIM_DATA <- data.frame()
@@ -114,8 +125,8 @@ server <- function (input, output, session){
         selected = sample_cols[1]
       )
       
-      cat("✓ Dropdown updated successfully\n")
-      cat("✓ Auto-selected:", sample_cols[1], "\n\n")
+      cat("âœ“ Dropdown updated successfully\n")
+      cat("âœ“ Auto-selected:", sample_cols[1], "\n\n")
       
       showNotification(
         paste("Loaded", length(sample_cols), "sample(s)"),
@@ -159,7 +170,7 @@ server <- function (input, output, session){
   # Handle waiter for process_coverage button
   # Enable download button when coverage_input completes
   observeEvent(coverage_input(), {
-    shinyjs::enable("summary")  # ✓ Abilita download solo dopo processing
+    shinyjs::enable("summary")  # âœ“ Abilita download solo dopo processing
   })
   
   observeEvent(input$calc_low_coverage, {
@@ -233,19 +244,19 @@ server <- function (input, output, session){
         
         cat("  Rows:", nrow(original_data), "\n")
         
-        # Step 2: Usa OMIM già caricato
+        # Step 2: Usa OMIM giÃ  caricato
         cat("Using pre-loaded OMIM annotations...\n")
         omim_gene <- OMIM_DATA
         
         cat("  OMIM rows:", nrow(omim_gene), "\n")
         
         # Check for SYMBOL column
-        if (!"SYMBOL" %in% colnames(original_data)) {
-          stop("ERROR: original_data missing SYMBOL column!")
-        }
-        if (!"SYMBOL" %in% colnames(omim_gene)) {
-          stop("ERROR: omim_gene missing SYMBOL column!")
-        }
+        validate(
+          need(FALSE, "internal error: missing data. Retry.")
+        )
+        validate(
+          need(FALSE, "internal error: OMIM data missing. Retry.")
+        )
         
         # Step 3: Merge dati
         cat("Merging data with annotations...\n")
@@ -360,25 +371,82 @@ server <- function (input, output, session){
         dev.off()
       }
     )
+    # output$transcript_list_text <- renderUI({
+    #   req(input$generate_gene_plot > 0)
+    #   Sys.sleep(0.3)
+      
+    #   transcripts <- tryCatch({
+    #     get("transcript_list", envir = .GlobalEnv)
+    #   }, error = function(e) {
+    #     NULL
+    #   })
+      
+    #   # Check se esiste e non Ã¨ vuoto
+    #   if (is.null(transcripts) || length(transcripts) == 0) {
+    #     return(tags$p("No transcript information available", style = "color: gray;"))
+    #   }
+      
+    #   tagList(
+    #     tags$div(style = "margin-top: 150px;"),
+    #     h4("Transcripts (", length(transcripts), ")"),
+    #     tags$div(
+    #       style = "border: 1px solid #ddd; 
+    #               padding: 10px; 
+    #               background: #f9f9f9; 
+    #               max-height: 200px; 
+    #               overflow-y: auto;
+    #               width: 80%;
+    #               margin: 0 auto;",
+    #       tags$ol(
+    #         lapply(transcripts, function(t) {
+    #           tags$li(as.character(t))
+    #         })
+    #       )
+    #     )
+    #   )
+    # })
+
+
+
     output$transcript_list_text <- renderUI({
-      req(input$generate_gene_plot > 0)
-      Sys.sleep(0.3)
+      # CRITICAL: Wait for plot to complete, not just button press
+      req(p1())  # This ensures p1() has finished executing
+      
+      # Small delay to ensure gene_transcript_ids is set
+      Sys.sleep(0.1)
       
       transcripts <- tryCatch({
-        get("transcript_list", envir = .GlobalEnv)
+        # Verifica che esista e sia un vettore, non una funzione
+        tlist <- get("gene_transcript_ids", envir = .GlobalEnv)
+        
+        # ✅ CONTROLLA CHE NON SIA UNA FUNZIONE
+        if (is.function(tlist)) {
+          cat("WARNING: gene_transcript_ids is a function, not a vector!\n")
+          return(NULL)
+        }
+        
+        # ✅ CONTROLLA CHE SIA UN VETTORE O LISTA
+        if (!is.vector(tlist) && !is.list(tlist)) {
+          cat("WARNING: gene_transcript_ids is not a vector/list!\n")
+          return(NULL)
+        }
+        
+        tlist
       }, error = function(e) {
+        cat("ERROR getting gene_transcript_ids:", e$message, "\n")
         NULL
       })
       
       # Check se esiste e non è vuoto
       if (is.null(transcripts) || length(transcripts) == 0) {
-        return(tags$p("No transcript information available", style = "color: gray;"))
+        return(shiny::tags$p("No transcript information available", style = "color: gray;"))
       }
       
-      tagList(
-        tags$div(style = "margin-top: 150px;"),
-        h4("Transcripts (", length(transcripts), ")"),
-        tags$div(
+      # ✅ SAFE: ora sappiamo che transcripts è un vettore
+      shiny::tagList(
+        shiny::tags$div(style = "margin-top: 150px;"),
+        shiny::h4(paste0("Transcripts (", length(transcripts), ")")),
+        shiny::tags$div(
           style = "border: 1px solid #ddd; 
                   padding: 10px; 
                   background: #f9f9f9; 
@@ -386,9 +454,9 @@ server <- function (input, output, session){
                   overflow-y: auto;
                   width: 80%;
                   margin: 0 auto;",
-          tags$ol(
-            lapply(transcripts, function(t) {
-              tags$li(as.character(t))
+          shiny::tags$ol(
+            lapply(seq_along(transcripts), function(i) {
+              shiny::tags$li(as.character(transcripts[i]))
             })
           )
         )
@@ -588,14 +656,14 @@ server <- function (input, output, session){
       # Color GENENAME based on OMIM status
       # ============================================
       if (length(col_GENENAME) > 0) {
-        # CRITICAL: Usa 'data' (originale) non 'data_export' (già modificato)
+        # CRITICAL: Usa 'data' (originale) non 'data_export' (giÃ  modificato)
         omim_high_rows <- which(data_original$omim_level == "high")
         omim_medium_rows <- which(data_original$omim_level == "medium")
         
         # Apply dark blue to high priority (OMIM + pathogenic)
         if (length(omim_high_rows) > 0) {
           openxlsx::addStyle(wb, "Variants", style = omim_dark,
-                             rows = omim_high_rows + 1,  # +1 perché riga 1 è header
+                             rows = omim_high_rows + 1,  # +1 perchÃ© riga 1 Ã¨ header
                              cols = col_GENENAME,
                              gridExpand = TRUE)
         }
@@ -637,7 +705,7 @@ server <- function (input, output, session){
   # ============================================================================
 
   output$uncoverPosition <- DT::renderDT({
-    # âœ… Remove Gene_name requirement - maxAF works with any filter!
+    # Ã¢Å“â€¦ Remove Gene_name requirement - maxAF works with any filter!
     validate(
       need(!is.null(mydata()) && ncol(mydata()) > 0,
            "Please load your coverage file first")
