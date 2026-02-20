@@ -78,7 +78,7 @@ preprocess <- function() {
                        fluidPage(
                          sidebarLayout(
                       sidebarPanel(
-                        tags$style(HTML("
+                        shiny::tags$style(HTML("
                           .btn-file { 
                             height: 34px !important; 
                             padding: 6px 12px !important; 
@@ -401,9 +401,8 @@ myTab1 <- function() {
                                                selected = "monoallelic"),
 
                                   numericInput("prev","Prevalence = 1 in ...
-                                               (people)",
-                                               min = 1,max = 1e8,value = 500),
-                                  options = NULL),
+                                                (people)",
+                                                min = 1,max = 1e8,value = 500)),
                       br(),
                       sliderInput("hetA","Allelic heterogeneity:",
                                   min = 0, max = 1,value = 0.1),

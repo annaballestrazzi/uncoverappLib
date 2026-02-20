@@ -400,7 +400,7 @@ if (type_coverage == "bam") {
     
     # Check chromosome availability
     message("Checking BAM chromosome availability...")
-    idx_stats <- system(paste("samtools idxstats", list_coverage[1]), intern = TRUE)
+    idx_stats <- system(paste0("samtools idxstats '", list_coverage()[1], "'"), intern = TRUE)
     idx_df <- read.table(text = idx_stats, header = FALSE, 
                          col.names = c("seqnames", "length", "mapped", "unmapped"),
                          stringsAsFactors = FALSE)

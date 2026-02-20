@@ -16,17 +16,36 @@ server <- function (input, output, session){
 
   # Reset app state on error
   session$onSessionEnded(function() {
-    # Reset reactive values quando la sessione termina
     tryCatch({
       data_source("none")
       raw_upload(NULL)
     }, error = function(e) {
       # Ignore errors during cleanup
     })
+    cat("\n=== SESSION ENDED - Stopping app cleanly ===\n")
+    stopApp()
   })
 
   options(shiny.maxRequestSize=30*1024^2)
-    # ============================================================================
+  # ============================================================================
+  # GLOBAL ERROR HANDLER
+  # ============================================================================
+  options(shiny.error = function() {
+      cat("\n❌ UNHANDLED ERROR at", format(Sys.time()), "\n")
+      cat(geterrmessage(), "\n\n")
+      
+      # Show message to user
+      showNotification(
+          "⚠️ A critical error occurred. The app will close automatically. Please relaunch.",
+          type = "error",
+          duration = 5
+      )
+      
+      # Wait briefly so user sees the message, then stop cleanly
+      Sys.sleep(2)
+      shiny::stopApp()
+  })
+  # ============================================================================
   # LOAD OMIM GENE LIST (caricato UNA SOLA VOLTA per tutta la sessione)
   # ============================================================================
   omim_file <- system.file("extdata", "sys_ndd_2025_subset.tsv", 
@@ -249,14 +268,8 @@ server <- function (input, output, session){
         omim_gene <- OMIM_DATA
         
         cat("  OMIM rows:", nrow(omim_gene), "\n")
-        
-        # Check for SYMBOL column
-        validate(
-          need(FALSE, "internal error: missing data. Retry.")
-        )
-        validate(
-          need(FALSE, "internal error: OMIM data missing. Retry.")
-        )
+
+        need(!is.null(original_data), "internal error: missing data. Retry.")
         
         # Step 3: Merge dati
         cat("Merging data with annotations...\n")
@@ -343,70 +356,23 @@ server <- function (input, output, session){
   # OUTPUT: ALL GENE COVERAGE PLOT
   # ============================================================================
     output$all_gene <- renderPlot({
-      cat("\n=== RENDER PLOT TRIGGERED ===\n")
-      p1()
-      cat("PLOT RENDERED!\n")
+        cat("\n=== RENDER PLOT TRIGGERED ===\n")
+        if (is.null(plot_recorded())) return(NULL)
+        replayPlot(plot_recorded())
+        cat("PLOT RENDERED!\n")
     }, height = 600, width = 800)
-    # ============================================================================
-    # DOWNLOAD: GENE COVERAGE PLOT
-    # ============================================================================
-    output$download_plot <- downloadHandler(
-      filename = function() {
-        gene_name <- if (!is.null(input$Gene_name) && input$Gene_name != "") {
-          input$Gene_name
-        } else {
-          "gene"
-        }
-        paste0('coverage_plot_', gene_name, '_', Sys.Date(), '.png')
-      },
-      
-      content = function(file) {
-        # Apri dispositivo grafico PNG
-        png(file, width = 1200, height = 800, res = 120)
-        
-        # Rigenera il plot
+    # Reactive value to store captured plot
+    plot_recorded <- reactiveVal(NULL)
+
+    observeEvent(input$generate_gene_plot, {
+      isolate({
         p1()
-        
-        # Chiudi dispositivo
-        dev.off()
-      }
-    )
-    # output$transcript_list_text <- renderUI({
-    #   req(input$generate_gene_plot > 0)
-    #   Sys.sleep(0.3)
-      
-    #   transcripts <- tryCatch({
-    #     get("transcript_list", envir = .GlobalEnv)
-    #   }, error = function(e) {
-    #     NULL
-    #   })
-      
-    #   # Check se esiste e non Ã¨ vuoto
-    #   if (is.null(transcripts) || length(transcripts) == 0) {
-    #     return(tags$p("No transcript information available", style = "color: gray;"))
-    #   }
-      
-    #   tagList(
-    #     tags$div(style = "margin-top: 150px;"),
-    #     h4("Transcripts (", length(transcripts), ")"),
-    #     tags$div(
-    #       style = "border: 1px solid #ddd; 
-    #               padding: 10px; 
-    #               background: #f9f9f9; 
-    #               max-height: 200px; 
-    #               overflow-y: auto;
-    #               width: 80%;
-    #               margin: 0 auto;",
-    #       tags$ol(
-    #         lapply(transcripts, function(t) {
-    #           tags$li(as.character(t))
-    #         })
-    #       )
-    #     )
-    #   )
-    # })
-
-
+        dev.flush()
+        Sys.sleep(0.2)
+        plot_recorded(recordPlot())
+        cat("✓ Plot captured successfully\n")
+      })
+    })
 
     output$transcript_list_text <- renderUI({
       # CRITICAL: Wait for plot to complete, not just button press

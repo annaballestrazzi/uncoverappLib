@@ -316,10 +316,26 @@ coverage_input <- eventReactive(input$process_coverage, {
     if (input$type_coverage == "bam") {
             cat("Processing BAM files with pileup...\n\n")
     
-            idx_stats <- system(paste("samtools idxstats", list_coverage()[1]), intern = TRUE)
+            idx_stats <- tryCatch({
+            result <- system(paste("samtools idxstats", list_coverage()[1]), 
+                            intern = TRUE, ignore.stderr = TRUE)
+            if (length(result) == 0) stop("BAM file not found or not indexed")
+            result
+            }, error = function(e) {
+            waiter::waiter_hide()
+            showNotification(
+                paste("❌ Could not read BAM file:", basename(list_coverage()[1]),
+                    "\nVerify that paths in your list file are correct and files are indexed."),
+                type = "error", duration = 10
+            )
+            return(NULL)
+            })
+
+            if (is.null(idx_stats)) return(NULL)
+
             idx_df <- read.table(text = idx_stats, header = FALSE, 
-                     col.names = c("seqnames", "length", "mapped", "unmapped"),
-                     stringsAsFactors = FALSE)
+                    col.names = c("seqnames", "length", "mapped", "unmapped"),
+                    stringsAsFactors = FALSE)
             chrs_with_data <- idx_df$seqnames[idx_df$mapped > 0]
             target_chrs <- as.character(unique(GenomicRanges::seqnames(for_grange)))
             available_chrs <- intersect(target_chrs, chrs_with_data)
@@ -368,11 +384,26 @@ coverage_input <- eventReactive(input$process_coverage, {
         colnames(pp)[1:3] <- c("seqnames", "start", "end")
         # Fix column names: use actual sample names with count_ prefix
         sample_names <- tools::file_path_sans_ext(basename(list_coverage()))
-        count_cols <- colnames(pp)[-(1:3)]  # All columns except chr, start, end
+
+        # Check for duplicates and fix
+        duplicates <- sample_names[duplicated(sample_names)]
+        if (length(duplicates) > 0) {
+            sample_names <- make.unique(sample_names, sep = "_")
+            showNotification(
+                paste("Duplicate sample names detected:", 
+                    paste(unique(duplicates), collapse=", "),
+                    "- automatically renamed to avoid conflicts."),
+                type = "warning",
+                duration = 10
+            )
+            cat("WARNING: Duplicate sample names renamed to:", paste(sample_names, collapse=", "), "\n")
+        }
+
+        count_cols <- colnames(pp)[-(1:3)]
 
         if (length(sample_names) == length(count_cols)) {
-        colnames(pp)[4:ncol(pp)] <- paste0("count_", sample_names)
-        cat("Renamed sample columns to:", paste(colnames(pp)[4:ncol(pp)], collapse=", "), "\n")
+            colnames(pp)[4:ncol(pp)] <- paste0("count_", sample_names)
+            cat("Renamed sample columns to:", paste(colnames(pp)[4:ncol(pp)], collapse=", "), "\n")
         }
 
         # ← AGGIUNGI SYMBOL QUI
@@ -402,14 +433,54 @@ coverage_input <- eventReactive(input$process_coverage, {
                     paste("⚠️ File not found:", file, 
                         "\nVerify that the 'BAM/BED list' file contains full paths, not just filenames."))
             )
+
+            # Check file is not binary (BAM files start with "BAM\1")
+            first_bytes <- tryCatch({
+                con <- file(file, "rb")
+                on.exit(close(con))
+                readBin(con, "raw", n = 4)
+            }, error = function(e) raw(0))
+
+            is_bam <- length(first_bytes) >= 4 && 
+                    rawToChar(first_bytes[1:3], multiple = FALSE) == "BAM"
+
+            if (is_bam) {
+                waiter::waiter_hide()
+                showNotification(
+                    paste0("❌ File '", basename(file), "' appears to be a BAM file, not a BED coverage file.",
+                        "\nPlease select 'BAM file' as the file format, or provide BED coverage files."),
+                    type = "error",
+                    duration = 15
+                )
+                return(NULL)
+            }
             
-            df <- read.table(
-                file, 
-                header = FALSE,
-                stringsAsFactors = FALSE,
-                colClasses = c("character", "integer", "integer", "numeric")
-            )
-            colnames(df) <- c("seqnames", "start", "end", "count")
+            df <- tryCatch({
+                result <- read.table(
+                    file,
+                    header = FALSE,
+                    stringsAsFactors = FALSE,
+                    colClasses = c("character", "integer", "integer", "numeric")
+                )
+                if (ncol(result) != 4) {
+                    stop(paste("Expected 4 columns (chr, start, end, depth) but got", ncol(result)))
+                }
+                colnames(result) <- c("seqnames", "start", "end", "count")
+                result
+            }, error = function(e) {
+                waiter::waiter_hide()
+                showNotification(
+                    paste0("❌ Could not read file '", basename(file), "' as BED coverage format.",
+                        "\nExpected format: chr start end depth (4 columns, tab-separated).",
+                        "\nMake sure you selected the correct file type (BAM vs BED).",
+                        "\nError: ", e$message),
+                    type = "error",
+                    duration = 15
+                )
+                return(NULL)
+            })
+
+            if (is.null(df)) return(NULL)
             
             cat(paste("  Raw intervals:", nrow(df), "\n"))
             
@@ -502,11 +573,26 @@ coverage_input <- eventReactive(input$process_coverage, {
         pp[is.na(pp)] <- 0
         # Fix column names: use actual sample names with count_ prefix
         sample_names <- tools::file_path_sans_ext(basename(list_coverage()))
+
+        # Check for duplicates and fix
+        duplicates <- sample_names[duplicated(sample_names)]
+        if (length(duplicates) > 0) {
+            sample_names <- make.unique(sample_names, sep = "_")
+            showNotification(
+                paste("⚠️ Duplicate sample names detected:", 
+                    paste(unique(duplicates), collapse=", "),
+                    "- automatically renamed to avoid conflicts."),
+                type = "warning",
+                duration = 10
+            )
+            cat("WARNING: Duplicate sample names renamed to:", paste(sample_names, collapse=", "), "\n")
+        }
+
         count_cols <- colnames(pp)[!colnames(pp) %in% c("seqnames", "start", "end", "SYMBOL")]
 
         if (length(sample_names) == length(count_cols)) {
-        colnames(pp)[colnames(pp) %in% count_cols] <- paste0("count_", sample_names)
-        cat("Renamed sample columns to:", paste(paste0("count_", sample_names), collapse=", "), "\n")
+            colnames(pp)[colnames(pp) %in% count_cols] <- paste0("count_", sample_names)
+            cat("Renamed sample columns to:", paste(paste0("count_", sample_names), collapse=", "), "\n")
         }
         cat(paste("Merged result:", nrow(pp), "unique intervals\n"))
     }
@@ -645,7 +731,16 @@ stat_summ <- reactive({
             dplyr::summarize(
                 Total_bases = sum(width, na.rm = TRUE),
                 Mean_coverage = sum(value * width, na.rm = TRUE) / sum(width, na.rm = TRUE),
-                Median_coverage = median(value, na.rm = TRUE),
+                Median_coverage = {
+                                    df_sub <- data.frame(value = value, width = width)
+                                    df_sub <- df_sub[!is.na(df_sub$value) & !is.na(df_sub$width) & df_sub$width > 0, ]
+                                    if (nrow(df_sub) == 0) NA_real_ else {
+                                        ord <- order(df_sub$value)
+                                        df_sub <- df_sub[ord, ]
+                                        cumw <- cumsum(df_sub$width)
+                                        df_sub$value[which(cumw >= sum(df_sub$width) / 2)[1]]
+                                    }
+                                },
                 number_of_intervals_under_20x = sum(value < 20, na.rm = TRUE),
                 bases_under_20x = sum(width[value < 20], na.rm = TRUE),
                 percentage_bases_under_20x = (sum(width[value < 20], na.rm = TRUE) / 

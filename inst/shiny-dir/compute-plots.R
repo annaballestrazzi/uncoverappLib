@@ -364,7 +364,7 @@ p1 <- eventReactive(input$generate_gene_plot, {
     )
     return(NULL)
   })
-  
+
   cat("\nPlot rendered successfully!\n")
   cat("\n======================================\n")
   cat("=== GENE PLOT GENERATION COMPLETE ===\n")
@@ -387,17 +387,15 @@ output$download_plot <- downloadHandler(
     }
     paste0('coverage_plot_', gene_name, '_', Sys.Date(), '.png')
   },
-  
   content = function(file) {
-    # Open PNG device
-    png(file, width = 1200, height = 800, res = 120)
-    
-    # Regenerate plot
-    p1()
-    
-    # Close device
-    dev.off()
-  }
+    req(plot_recorded())
+    png(file, width = 3600, height = 2400, res = 300)
+    on.exit(dev.off(), add = TRUE)
+    replayPlot(plot_recorded())
+    cat("=== PLOT DOWNLOADED ===\n")
+    cat("File:", file, "\n")
+  },
+  contentType = "application/octet-stream"
 )
 
 # ============================================================================
