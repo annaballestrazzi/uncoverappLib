@@ -155,7 +155,74 @@ server <- function (input, output, session){
     }
     
   }, ignoreInit = TRUE, ignoreNULL = TRUE)
+  observeEvent(coverage_input(), {
+    req(coverage_input())
+    data <- coverage_input()
+    coord_cols <- c("seqnames", "start", "end", "SYMBOL")
+    sample_cols <- setdiff(colnames(data), coord_cols)
+    shinyjs::show("preprocess_filter_panel")
+    shinyWidgets::updatePickerInput(session, "preprocess_sample_filter",
+                      choices = sample_cols,
+                      selected = sample_cols)
+  })
 
+  observeEvent(input$apply_preprocess_filter, {
+    output$input1 <- DT::renderDataTable({
+      req(coverage_input())
+      data <- coverage_input()
+      
+      sample_cols <- input$preprocess_sample_filter
+      threshold <- as.numeric(input$preprocess_coverage_filter)
+
+      keep <- apply(data[, sample_cols, drop = FALSE], 1, function(row) {
+        any(!is.na(row) & as.numeric(row) <= threshold)
+      })
+      
+      filtered <- data[keep, ]
+      
+      # Per i campioni sopra soglia, sostituisci con ">N"
+      for (col in sample_cols) {
+        above <- !is.na(filtered[[col]]) & filtered[[col]] > threshold
+        filtered[[col]] <- as.character(filtered[[col]])
+        filtered[[col]][above] <- paste0(">", threshold)
+      }
+      
+      # NA rimangono vuoti
+      # Per i campioni sopra soglia, sostituisci con ">N"
+      for (col in sample_cols) {
+        above <- !is.na(filtered[[col]]) & filtered[[col]] > threshold
+        filtered[[col]] <- as.character(filtered[[col]])
+        filtered[[col]][above] <- paste0(">", threshold)
+        filtered[[col]][is.na(filtered[[col]])] <- "NA"
+      }
+      
+      filtered
+    })
+  })
+
+  output$download_preprocess <- downloadHandler(
+    filename = function() {
+      paste0("coverage_data_", Sys.Date(), ".xlsx")
+    },
+    content = function(file) {
+      # Se il filtro è stato applicato usa la tabella filtrata
+      # altrimenti usa quella originale
+      data <- if (input$apply_preprocess_filter > 0) {
+        sample_cols <- input$preprocess_sample_filter
+        threshold <- as.numeric(input$preprocess_coverage_filter)
+        
+        df <- coverage_input()
+        keep <- apply(df[, sample_cols, drop = FALSE], 1, function(row) {
+          any(!is.na(row) & as.numeric(row) <= threshold)
+        })
+        df[keep, ]
+      } else {
+        coverage_input()
+      }
+      
+      openxlsx::write.xlsx(data, file)
+    }
+  )
   # ============================================================================
   # OUTPUT: low_coverage_ready (for annotation button visibility)
   # ============================================================================
@@ -226,7 +293,7 @@ server <- function (input, output, session){
         type = "message",
         duration = 3
       )
-      
+      df[is.na(df)] <- "NA"
       return(df)
       
     }, error = function(e) {
@@ -329,8 +396,10 @@ server <- function (input, output, session){
   # ============================================================================
   
   output$text <- DT::renderDataTable({
-    validate(need(ncol(mydata()) != "0", "Please, upload your file"))
-    mydata()
+      validate(need(ncol(mydata()) != "0", "Please, upload your file"))
+      data <- mydata()
+      data[is.na(data)] <- "NA"
+      data
   })
 
   # ============================================================================
@@ -350,7 +419,7 @@ server <- function (input, output, session){
            "No low coverage data available. Press 'Calculate Low Coverage Regions' button.")
     )
   
-    return(data)
+    return(DT::datatable(data, options = list(naValue = "NA")))
   })
   # ============================================================================
   # OUTPUT: ALL GENE COVERAGE PLOT

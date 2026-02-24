@@ -205,9 +205,53 @@ preprocess <- function() {
                       shiny::mainPanel(
                         tabsetPanel(
                           tabPanel(title= "input for uncoverapp",
-                                     DT::DTOutput("input1")
+                            shinyjs::hidden(
+                              div(id = "preprocess_filter_panel",
+                                fluidRow(
+                                  column(3,
+                                    selectInput("preprocess_coverage_filter",
+                                                label = "Coverage threshold",
+                                                choices = c(1:100),
+                                                selected = 20)
+                                  ),
+                                  column(4,
+                                    shinyWidgets::pickerInput(
+                                                "preprocess_sample_filter",
+                                                label = "Filter on samples",
+                                                choices = NULL,
+                                                multiple = TRUE,
+                                                options = list(
+                                                  `actions-box` = TRUE,
+                                                  `selected-text-format` = "count > 1",
+                                                  `deselect-all-text` = "None",
+                                                  `select-all-text` = "All",
+                                                  `style` = "btn-default"
+                                                ))
+                                  ),
+                                  column(2,
+                                    actionButton("apply_preprocess_filter",
+                                                "Apply",
+                                                icon = icon("filter"),
+                                                class = "btn-block",
+                                                style = "color: #fff; background-color: #e67e22; 
+                                                          border-color: #d35400; margin-top: 25px;")
+                                  ),
+                                  column(3,
+                                    downloadButton("download_preprocess",
+                                                  "Download",
+                                                  class = "btn-block",
+                                                  style = "color: #fff !important; background-color: #27ae60;
+                                                            border-color: #27ae60; margin-top: 25px;")
+                                  )
+
+
+                                )
+                              )
+                            ),
+                            DT::DTOutput("input1")
                           )
-                        ) )
+                        )
+                      )
                     )))
 }
 

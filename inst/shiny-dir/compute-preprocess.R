@@ -380,11 +380,12 @@ coverage_input <- eventReactive(input$process_coverage, {
         })
         
         pp <- Reduce(function(...) merge(..., by = c("seqnames", "pos", "end")), lst3)
-        pp[is.na(pp)] <- 0
         colnames(pp)[1:3] <- c("seqnames", "start", "end")
         # Fix column names: use actual sample names with count_ prefix
         sample_names <- tools::file_path_sans_ext(basename(list_coverage()))
-
+        cat(paste("Merged result:", nrow(pp), "unique intervals\n"))
+        cat("NA count after merge:", sum(is.na(pp)), "\n")
+        cat("Zero count after merge:", sum(pp == 0, na.rm = TRUE), "\n")
         # Check for duplicates and fix
         duplicates <- sample_names[duplicated(sample_names)]
         if (length(duplicates) > 0) {
@@ -568,9 +569,13 @@ coverage_input <- eventReactive(input$process_coverage, {
                 )
             }
         }
-        
+      
         # Replace NA with 0 for missing coverage
-        pp[is.na(pp)] <- 0
+        # Fix column names: use actual sample names with count_ prefix
+        cat(paste("Merged result:", nrow(pp), "unique intervals\n"))
+        cat("NA count after merge:", sum(is.na(pp)), "\n")
+        cat("Zero count after merge:", sum(pp == 0, na.rm = TRUE), "\n")
+
         # Fix column names: use actual sample names with count_ prefix
         sample_names <- tools::file_path_sans_ext(basename(list_coverage()))
 

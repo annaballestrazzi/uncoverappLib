@@ -58,6 +58,10 @@ buildAnnotation <- function(sample_data,
   if (!genome %in% c("hg19", "hg38")) {
     stop("Genome must be 'hg19' or 'hg38'")
   }
+
+  if (!is.numeric(coverage_threshold) || coverage_threshold < 0) {
+    stop("coverage_threshold must be a non-negative number")
+  }
   # Packages loaded via NAMESPACE imports
   # No explicit library() calls needed
 
@@ -511,8 +515,10 @@ buildAnnotation <- function(sample_data,
     textDecoration = "Bold",
     border = "TopBottomLeftRight"
   )
-  openxlsx::addStyle(wb, "Low Coverage Variants", headerStyle, 
-                     rows = 1, cols = 1:ncol(intersect_df), gridExpand = TRUE)
+  openxlsx::addStyle(wb, "Low Coverage Variants", yellowHighlight,
+                   rows = important_rows + 1,
+                   cols = col_start:col_end,
+                   gridExpand = TRUE)
   
   # Freeze header + auto-width
   openxlsx::freezePane(wb, "Low Coverage Variants", firstRow = TRUE)
@@ -735,8 +741,7 @@ buildAnnotation <- function(sample_data,
   cat(paste("Excel formatting took:", 
             round(difftime(Sys.time(), excel_time, units = "secs"), 2), 
             "seconds\n"))
-}
-  
+  }
   cat("Total script execution:",round(difftime(Sys.time(), script_start, units = "secs"), 2),"seconds\n")
   cat("\n=== DONE ===\n")
   invisible(intersect_df)

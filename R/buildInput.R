@@ -60,6 +60,7 @@ utils::globalVariables(c(
 #' @importFrom S4Vectors queryHits subjectHits
 #' @importFrom dplyr filter group_by summarise mutate select inner_join full_join
 #' @importFrom tidyselect all_of
+#' @importFrom openxlsx createWorkbook addWorksheet writeData addStyle conditionalFormatting freezePane setColWidths saveWorkbook createStyle
 #'
 #' @examples
 #' # Show function signature
@@ -138,7 +139,8 @@ buildInput <- function(geneList,
                        base.quality = 1, 
                        type_coverage = "bam",
                        input_coord_system = "1-based",
-                       annotation_file = NULL) {
+                       annotation_file = NULL,
+                       coverage_threshold = NULL){
                         script_start <- Sys.time()
 
   
@@ -156,7 +158,9 @@ buildInput <- function(geneList,
   if (!input_coord_system %in% c("0-based", "1-based")) {
     stop("input_coord_system must be '0-based' or '1-based'")
   }
-  
+  if (!is.null(coverage_threshold) && (!is.numeric(coverage_threshold) || coverage_threshold < 0)) {
+    stop("coverage_threshold must be a non-negative number")
+  }
   # ==============================================================================
   # INITIALIZATION
   # ==============================================================================
@@ -172,6 +176,9 @@ buildInput <- function(geneList,
   message("Input type: ", type_input)
   message("Coverage type: ", type_coverage)
   message("Coordinate system: ", input_coord_system)
+  if (!is.null(coverage_threshold)) {
+    message("Coverage threshold for xlsx export: ", coverage_threshold)
+  }
   # Conditional parameters (only for BAM)
   if (type_coverage == "bam") {
     message("MAPQ minimum: ", MAPQ.min)
@@ -666,7 +673,7 @@ if (type_coverage == "bam") {
   
   # Calculate statistics with proper weighting
   statistical_operation <- function(df) {
-    df <- df %>% dplyr::filter(!is.na(value), !is.na(width))
+    df <- df %>% dplyr::filter(!is.na(value), !is.na(width), width > 0)
     
     if (nrow(df) == 0) {
       return(data.frame(
@@ -687,7 +694,16 @@ if (type_coverage == "bam") {
       dplyr::summarize(
         Total_bases = sum(width, na.rm = TRUE),
         Mean_coverage = sum(value * width, na.rm = TRUE) / sum(width, na.rm = TRUE),
-        Median_coverage = median(value, na.rm = TRUE),
+        Median_coverage = {
+            df_sub <- data.frame(value = value, width = width)
+            df_sub <- df_sub[!is.na(df_sub$value) & !is.na(df_sub$width) & df_sub$width > 0, ]
+            if (nrow(df_sub) == 0) NA_real_ else {
+                ord <- order(df_sub$value)
+                df_sub <- df_sub[ord, ]
+                cumw <- cumsum(df_sub$width)
+                df_sub$value[which(cumw >= sum(df_sub$width) / 2)[1]]
+            }
+        },
         number_of_intervals_under_20x = sum(value < 20, na.rm = TRUE),
         bases_under_20x = sum(width[value < 20], na.rm = TRUE),
         percentage_bases_under_20x = (sum(width[value < 20], na.rm = TRUE) / 
@@ -779,10 +795,6 @@ if (!is.null(annotation_file) && file.exists(annotation_file)) {
   # Rename columns before writing
   pp_output <- pp
 
-  # if ("SYMBOL" %in% colnames(pp_output)) {
-  # message("Removing SYMBOL from coverage output (for compute-annotation.R)")
-  # pp_output <- pp_output %>% dplyr::select(-SYMBOL)
-  # }
 
   # 1. Rename first column from "seqnames" to "chromosome"
   colnames(pp_output)[1] <- "chromosome"
@@ -833,6 +845,73 @@ if (!is.null(annotation_file) && file.exists(annotation_file)) {
     dec = "."
   )
   message(paste("Statistical summary written to:", stats_file))
+  # ==============================================================================
+  # STEP 7b: OPTIONAL - WRITE LOW COVERAGE XLSX
+  # ==============================================================================
+
+  if (!is.null(coverage_threshold)) {
+    message("=== STEP 7b: WRITING LOW COVERAGE XLSX (threshold: ", coverage_threshold, ") ===")
+    
+    # Identify count columns
+    count_cols_out <- grep("^count_", colnames(pp_output), value = TRUE)
+    
+    # Filter rows where at least one sample is <= threshold (OR logic)
+    low_cov_mask <- apply(pp_output[, count_cols_out, drop = FALSE], 1, function(row) {
+      any(row <= coverage_threshold, na.rm = TRUE)
+    })
+    
+    low_cov_df <- pp_output[low_cov_mask, c("chromosome", "start", "end", "SYMBOL", count_cols_out)]
+    
+    message(paste("Rows with at least one sample <=", coverage_threshold, "x:", nrow(low_cov_df)))
+    
+    if (nrow(low_cov_df) == 0) {
+      message("WARNING: No positions found below threshold, xlsx not written")
+    } else {
+      xlsx_file <- file.path(myDir, paste0(timestamp, '_low_coverage_', coverage_threshold, 'x.xlsx'))
+      
+      wb <- openxlsx::createWorkbook()
+      openxlsx::addWorksheet(wb, "Low Coverage")
+      openxlsx::writeData(wb, "Low Coverage", low_cov_df)
+      
+      # Header style
+      headerStyle <- openxlsx::createStyle(
+        fontColour     = "#FFFFFF",
+        fgFill         = "#4F81BD",
+        halign         = "center",
+        textDecoration = "Bold",
+        border         = "TopBottomLeftRight"
+      )
+      openxlsx::addStyle(wb, "Low Coverage", headerStyle,
+                         rows = 1, cols = 1:ncol(low_cov_df), gridExpand = TRUE)
+      
+      # Freeze header + auto-width
+      openxlsx::freezePane(wb, "Low Coverage", firstRow = TRUE)
+      openxlsx::setColWidths(wb, "Low Coverage",
+                             cols = 1:ncol(low_cov_df), widths = "auto")
+      
+      # Conditional formatting per ogni colonna count_
+      for (col_name in count_cols_out) {
+        col_idx <- which(colnames(low_cov_df) == col_name)
+        nrows_data <- nrow(low_cov_df)
+        
+        openxlsx::conditionalFormatting(
+          wb, "Low Coverage",
+          cols = col_idx, rows = 2:(nrows_data + 1),
+          rule = paste0("<=", coverage_threshold),
+          style = openxlsx::createStyle(fgFill = "#FFB6C1")  # rosso chiaro
+        )
+        openxlsx::conditionalFormatting(
+          wb, "Low Coverage",
+          cols = col_idx, rows = 2:(nrows_data + 1),
+          rule = paste0(">", coverage_threshold),
+          style = openxlsx::createStyle(fgFill = "#90EE90")  # verde chiaro
+        )
+      }
+      
+      openxlsx::saveWorkbook(wb, xlsx_file, overwrite = TRUE)
+      message(paste("Low coverage xlsx written to:", xlsx_file))
+    }
+  }
   
   message("\n=== ANALYSIS COMPLETE ===")
   message(Sys.time())
@@ -843,6 +922,7 @@ if (!is.null(annotation_file) && file.exists(annotation_file)) {
   invisible(list(
     coverage = pp,
     statistics = stat_summ,
-    output_dir = myDir
+    output_dir = myDir,
+    low_coverage_xlsx = if (!is.null(coverage_threshold) && exists("xlsx_file")) xlsx_file else NULL
   ))
 }

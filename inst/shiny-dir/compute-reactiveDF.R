@@ -256,7 +256,9 @@ mydata <- reactive({
     cat("Final columns:", paste(colnames(tmp_pileup), collapse=", "), "\n")
     
     cov_cols <- grep("^sample_", colnames(tmp_pileup), value = TRUE)
-    tmp_pileup[cov_cols] <- lapply(tmp_pileup[cov_cols], as.integer)
+    tmp_pileup[cov_cols] <- lapply(tmp_pileup[cov_cols], function(x) {
+      suppressWarnings(as.numeric(x))
+    })
     
     return(tmp_pileup)
   }
@@ -389,7 +391,7 @@ filtered_low <- eventReactive(input$calc_low_coverage, {
     result <- if (identical(thr, "all")) {
       df
     } else {
-      dplyr::filter(df, coverage <= as.numeric(thr))
+      dplyr::filter(df, is.na(coverage) | coverage <= as.numeric(thr))
     }
     
     cat("Result:", nrow(result), "rows\n")
@@ -439,12 +441,12 @@ filtered_low <- eventReactive(input$calc_low_coverage, {
       )
     } else {
       dplyr::filter(
-        df,
-        chromosome == gene_coords$chr,
-        end >= gene_coords$start,
-        start <= gene_coords$end,
-        coverage <= as.numeric(thr)
-      )
+      df,
+      chromosome == gene_coords$chr,
+      end >= gene_coords$start,
+      start <= gene_coords$end,
+      is.na(coverage) | coverage <= as.numeric(thr)
+    )
     }
 
     cat("Result:", nrow(result), "rows\n")
@@ -462,7 +464,7 @@ filtered_low <- eventReactive(input$calc_low_coverage, {
     result <- if (identical(thr, "all")) {
       dplyr::filter(df, chromosome == chr_val)
     } else {
-      dplyr::filter(df, chromosome == chr_val, coverage <= as.numeric(thr))
+      dplyr::filter(df, chromosome == chr_val, is.na(coverage) | coverage <= as.numeric(thr))
     }
     
     cat("Result:", nrow(result), "rows\n")
@@ -515,7 +517,7 @@ filtered_low <- eventReactive(input$calc_low_coverage, {
         chromosome == region_parts$chr,
         start == region_parts$start,
         end == region_parts$end,
-        coverage <= as.numeric(thr)
+        is.na(coverage) | coverage <= as.numeric(thr)
       )
       result <- if (nrow(result_exact) > 0) {
         result_exact
@@ -525,7 +527,7 @@ filtered_low <- eventReactive(input$calc_low_coverage, {
           chromosome == region_parts$chr,
           start <= region_parts$end,
           end >= region_parts$start,
-          coverage <= as.numeric(thr)
+          is.na(coverage) | coverage <= as.numeric(thr)
         )
       }
     }
