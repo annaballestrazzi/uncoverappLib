@@ -515,10 +515,7 @@ buildAnnotation <- function(sample_data,
     textDecoration = "Bold",
     border = "TopBottomLeftRight"
   )
-  openxlsx::addStyle(wb, "Low Coverage Variants", yellowHighlight,
-                   rows = important_rows + 1,
-                   cols = col_start:col_end,
-                   gridExpand = TRUE)
+  
   
   # Freeze header + auto-width
   openxlsx::freezePane(wb, "Low Coverage Variants", firstRow = TRUE)
@@ -725,8 +722,8 @@ buildAnnotation <- function(sample_data,
       
       yellowHighlight <- openxlsx::createStyle(fgFill = "#FFFF00")
       
-      openxlsx::addStyle(wb, "Low Coverage Variants", headerStyle, 
-                   rows = 1, cols = 1:ncol(intersect_df_export), gridExpand = TRUE)
+      openxlsx::addStyle(wb, "Low Coverage Variants", yellowHighlight, 
+                   rows = important_rows + 1, cols = col_start:col_end, gridExpand = TRUE)
       
       cat("Highlighted", length(important_rows), "important variants\n")
     }
