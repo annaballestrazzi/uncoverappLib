@@ -48,7 +48,9 @@ utils::globalVariables(c(
 #'   Ignored when `type_coverage = "bam"` (BAM is always 1-based)
 #' @param annotation_file (char) Optional path to annotation file (tab-separated 
 #'   with SYMBOL column for adding gene-level annotations)
-#'
+#' @param output_name (char) Optional base name for output files (without extension).
+#'   If NULL (default), the current date is used (e.g. "Mon_Jan_01_2025").
+#' 
 #' @export
 #' @import Rsamtools
 #' @import TxDb.Hsapiens.UCSC.hg19.knownGene
@@ -140,7 +142,8 @@ buildInput <- function(geneList,
                        type_coverage = "bam",
                        input_coord_system = "1-based",
                        annotation_file = NULL,
-                       coverage_threshold = NULL){
+                       coverage_threshold = NULL,
+                       output_name = NULL){
                         script_start <- Sys.time()
 
   
@@ -613,8 +616,7 @@ if (type_coverage == "bam") {
   sample_cols <- setdiff(colnames(ppinp), coord_cols)
   n <- length(sample_cols)
 
-  samples <- tools::file_path_sans_ext(basename(list_coverage))
-
+  samples <- basename(list_coverage)
   if (length(samples) != n) {
     samples <- paste0("sample_", seq_len(n))
   }
@@ -789,8 +791,8 @@ if (!is.null(annotation_file) && file.exists(annotation_file)) {
   message("=== STEP 7: WRITING OUTPUTS ===")
   
   # Directory already created at the beginning
-  # Generate timestamp for filenames
-  timestamp <- format(Sys.time(), "%a_%b_%d_%Y")
+  # Use custom output name or fall back to timestamp
+  timestamp <- if (!is.null(output_name)) output_name else format(Sys.time(), "%a_%b_%d_%Y")
   
   # Rename columns before writing
   pp_output <- pp
@@ -800,8 +802,7 @@ if (!is.null(annotation_file) && file.exists(annotation_file)) {
   colnames(pp_output)[1] <- "chromosome"
 
   # 2. Rename count columns to include filename prefix
-  sample_names <- tools::file_path_sans_ext(basename(list_coverage))
-
+  sample_names <- basename(list_coverage)
   # Identify ONLY count columns (exclude coords AND SYMBOL)
   coord_cols <- c("chromosome", "start", "end", "SYMBOL")
   count_cols <- setdiff(colnames(pp_output), coord_cols)
@@ -832,8 +833,8 @@ if (!is.null(annotation_file) && file.exists(annotation_file)) {
   
   # Write statistics file
   stats_file <- file.path(myDir, paste0(timestamp, '_statistical_summary.txt'))
-  # Remove "X" prefix from sample names (added by R for numeric-starting names)
-  stat_summ$sample <- sub("^X", "", stat_summ$sample)
+  # Remove "X" prefix added by R when column names start with a digit
+  stat_summ$sample <- sub("^X(?=[0-9])", "", stat_summ$sample, perl = TRUE)
   utils::write.table(
     x = stat_summ,
     file = stats_file,
