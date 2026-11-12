@@ -250,17 +250,42 @@ buildInput <- function(geneList,
     
     # Stage 1: Convert to ENTREZ IDs
     message("Stage 1: Converting gene names to ENTREZ IDs...")
-    my_gene_name <- OrganismDbi::select(
-      org.Hs.eg.db, 
-      key = gene.List, 
-      columns = "ENTREZID", 
+    alias_tab <- OrganismDbi::select(
+      org.Hs.eg.db,
+      key = gene.List,
+      columns = c("ENTREZID", "SYMBOL"),
       keytype = "ALIAS"
     ) %>%
       as.data.frame() %>%
-      dplyr::filter(!is.na(ENTREZID)) %>%
+      dplyr::filter(!is.na(ENTREZID))
+
+    # A name can be the official symbol of one gene and an alias of other genes
+    # (e.g. ARX is also an alias of UBA2): the gene with that official symbol wins.
+    my_gene_name <- alias_tab %>%
       dplyr::group_by(ALIAS) %>%
+      dplyr::arrange(dplyr::desc(SYMBOL == ALIAS), .by_group = TRUE) %>%
       dplyr::slice(1) %>%
       dplyr::ungroup()
+
+    # A name that is only an alias, of more than one gene, is ambiguous: warn
+    ambiguous <- alias_tab %>%
+      dplyr::group_by(ALIAS) %>%
+      dplyr::filter(!any(SYMBOL == ALIAS, na.rm = TRUE),
+                    dplyr::n_distinct(ENTREZID) > 1) %>%
+      dplyr::summarise(others = paste(unique(SYMBOL), collapse = "/"), .groups = "drop") %>%
+      dplyr::inner_join(my_gene_name, by = "ALIAS")
+    if (nrow(ambiguous) > 0) {
+      warning(paste0("Ambiguous gene names (alias of more than one gene; write the official ",
+                     "symbol to choose): ",
+                     paste0(ambiguous$ALIAS, " -> ", ambiguous$SYMBOL, " used (candidates: ",
+                            ambiguous$others, ")", collapse = "; ")))
+    }
+    renamed <- my_gene_name %>% dplyr::filter(SYMBOL != ALIAS)
+    if (nrow(renamed) > 0) {
+      message("Aliases converted to official symbol: ",
+              paste0(renamed$ALIAS, " -> ", renamed$SYMBOL, collapse = ", "))
+    }
+    my_gene_name <- my_gene_name %>% dplyr::select(ALIAS, ENTREZID)
     
     found_genes <- unique(my_gene_name$ALIAS)
     not_found <- setdiff(gene.List, found_genes)

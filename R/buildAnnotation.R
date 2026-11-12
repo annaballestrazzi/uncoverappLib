@@ -137,42 +137,43 @@ buildAnnotation <- function(sample_data,
   cat("=== STEP 2: IDENTIFYING TARGET COLUMN ===\n")
   
   actual_column <- NULL
-  
-  if (target_sample %in% colnames(df)) {
+  # Sample columns only (not coordinates or gene names)
+  sample_cols <- setdiff(colnames(df), c("chromosome", "start", "end", "SYMBOL"))
+  # Compare names without the "count_" prefix and the file extension, so that
+  # "S1", "S1.bam" and "count_S1.bam" all find count_S1.bam and never count_S10.bam
+  clean_name <- function(x) {
+    sub("\\.(bam|cram|sam|bed|bedgraph|txt|tsv)$", "", sub("^count_", "", x), ignore.case = TRUE)
+  }
+
+  if (target_sample %in% sample_cols) {
     actual_column <- target_sample
     cat("Found exact match for target sample:", actual_column, "\n")
   }
-  
+
   if (is.null(actual_column)) {
-    with_prefix <- paste0("count_", target_sample)
-    if (with_prefix %in% colnames(df)) {
-      actual_column <- with_prefix
-      cat("Found target sample with 'count_' prefix:", actual_column, "\n")
+    matches <- sample_cols[clean_name(sample_cols) == clean_name(target_sample)]
+    if (length(matches) > 1) {
+      stop("Target sample '", target_sample, "' matches more than one column: ",
+           paste(matches, collapse = ", "), ". Write the full column name.")
+    }
+    if (length(matches) == 1) {
+      actual_column <- matches
+      cat("Found target sample (without prefix/extension):", actual_column, "\n")
     }
   }
-  
+
   if (is.null(actual_column)) {
-    without_prefix <- sub("^count_", "", target_sample)
-    if (without_prefix %in% colnames(df)) {
-      actual_column <- without_prefix
-      cat("Found target sample after removing 'count_' prefix:", actual_column, "\n")
+    matches <- sample_cols[grepl(tolower(clean_name(target_sample)), tolower(sample_cols), fixed = TRUE)]
+    if (length(matches) > 1) {
+      stop("Target sample '", target_sample, "' is part of more than one column name: ",
+           paste(matches, collapse = ", "), ". Write the full column name.")
     }
-  }
-  
-  if (is.null(actual_column)) {
-    pattern <- gsub("^count_", "", target_sample, ignore.case = TRUE)
-    matches <- grep(pattern, colnames(df), ignore.case = TRUE, value = TRUE)
-    
-    if (length(matches) > 0) {
-      actual_column <- matches[1]
+    if (length(matches) == 1) {
+      actual_column <- matches
       cat("Found partial match for target sample:", actual_column, "\n")
-      if (length(matches) > 1) {
-        cat("WARNING: Multiple matches found:", paste(matches, collapse = ", "), "\n")
-        cat("Using first match:", actual_column, "\n")
-      }
     }
   }
-  
+
   if (is.null(actual_column)) {
     stop("Target sample '", target_sample, "' not found in data.\n",
          "Available columns: ", paste(colnames(df), collapse = ", "))
@@ -202,6 +203,8 @@ buildAnnotation <- function(sample_data,
     coverage = df[[actual_column]],
     stringsAsFactors = FALSE
   )
+  # Same notation as the annotation ("chr1"), whether the input uses "1" or "chr1"
+  bedA$chromosome <- paste0("chr", sub("^chr", "", bedA$chromosome))
   
   cat("Total positions in data:", nrow(bedA), "\n")
   cat("Coverage range:", min(bedA$coverage, na.rm = TRUE), "-", 
@@ -288,7 +291,9 @@ buildAnnotation <- function(sample_data,
       keep.extra.columns = FALSE,
       ignore.strand = TRUE
     )
-    GenomeInfoDb::seqlevelsStyle(gr) <- "NCBI"
+    
+    # renaming is not possible for some names (e.g. only "M"): then keep them as they are
+    try(GenomeInfoDb::seqlevelsStyle(gr) <- "NCBI", silent = TRUE)
     gr
   }, error = function(e) {
     stop("ERROR creating GRanges: ", e$message)
@@ -298,6 +303,20 @@ buildAnnotation <- function(sample_data,
   cat("Optimizing: merging", length(bedA_gr), "intervals...\n")
   reduced <- GenomicRanges::reduce(bedA_gr, min.gapwidth = 100)
   cat("Reduced to", length(reduced), "intervals for query\n\n")
+  # Query only chromosomes present in the annotation file (e.g. chrM or alt contigs
+  # may be missing): one missing chromosome would make the whole query fail
+  query_chr <- as.character(GenomicRanges::seqnames(reduced))
+  missing_chr <- setdiff(unique(query_chr), Rsamtools::seqnamesTabix(file.name))
+  if (length(missing_chr) > 0) {
+    cat("WARNING: chromosomes not in the annotation file (not annotated):",
+        paste(missing_chr, collapse = ", "), "\n")
+    warning("Chromosomes not in the annotation file, not annotated: ",
+            paste(missing_chr, collapse = ", "))
+    reduced <- reduced[!query_chr %in% missing_chr]
+  }
+  if (length(reduced) == 0) {
+    stop("None of the chromosomes in the input is in the annotation file")
+  }
   
   result <- try(Rsamtools::scanTabix(file.name, param = reduced), silent = FALSE)
   
