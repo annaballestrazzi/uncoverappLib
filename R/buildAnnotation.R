@@ -209,12 +209,12 @@ buildAnnotation <- function(sample_data,
   cat("Chromosomes in data:", paste(unique(bedA$chromosome), collapse = ", "), "\n")
   
   bedA <- bedA %>%
-    dplyr::filter(coverage <= coverage_threshold)
+    dplyr::filter(coverage < coverage_threshold)
   
-  cat("After coverage filter (<=", coverage_threshold, "):", nrow(bedA), "positions\n")
+  cat("After coverage filter (<", coverage_threshold, "):", nrow(bedA), "positions\n")
   
   if (nrow(bedA) == 0) {
-    stop("No positions with coverage <= ", coverage_threshold)
+    stop("No positions with coverage < ", coverage_threshold)
   }
   
   cat("Sample of filtered data:\n")
@@ -328,8 +328,9 @@ buildAnnotation <- function(sample_data,
   
   dff <- lapply(result, function(elt) {
     if (length(elt) == 0) return(data.frame())
-    read.csv(textConnection(elt), sep = "\t", header = FALSE, 
-             stringsAsFactors = FALSE)
+    # colClasses = "character": otherwise R turns "T" (tolerated) into TRUE
+    read.csv(textConnection(elt), sep = "\t", header = FALSE,
+             stringsAsFactors = FALSE, colClasses = "character", quote = "")
   })
   
   valid_dfs <- dff[sapply(dff, nrow) > 0]
@@ -352,7 +353,7 @@ buildAnnotation <- function(sample_data,
                         'dbsnp', 'GENENAME', 'PROTEIN_ensembl',
                         'MutationAssessor', 'SIFT', 'Polyphen2',
                         'M_CAP', 'CADD_PHED', 'AF_gnomAD', 'ClinVar',
-                        'clinvar_MedGen_id', 'HGVSc_VEP', 'HGVSp_VEP')
+                        'clinvar_MedGen_id', 'clinvar_OMIM_id', 'HGVSc_VEP', 'HGVSp_VEP')
   } else {
     colnames(bedB) <- paste0("V", 1:ncols)
   }
@@ -360,7 +361,8 @@ buildAnnotation <- function(sample_data,
   bedB$Chromosome <- paste0("chr", bedB[[1]])
   bedB <- bedB[, -1]
   bedB$Chromosome <- as.character(bedB$Chromosome)
-  
+  bedB$start <- as.integer(bedB$start)
+  bedB$end <- as.integer(bedB$end)
   if ("AF_gnomAD" %in% colnames(bedB)) {
     bedB$AF_gnomAD <- suppressWarnings(as.numeric(bedB$AF_gnomAD))
   }
@@ -421,24 +423,19 @@ buildAnnotation <- function(sample_data,
   }
   
   # ==============================================================================
-  # DEDUPLICATION: Keep only most important variant per position
+  # SORT VARIANTS (all variants are kept, also several at the same position)
   # ==============================================================================
 
-  cat("\n=== DEDUPLICATING VARIANTS ===\n")
-  cat("Variants before deduplication:", nrow(intersect_df), "\n")
-
-  # Sort by importance (pathogenic > high CADD > rare)
+  # Within each position: ClinVar first, then high CADD, then rare (low AF)
   intersect_df <- intersect_df %>%
     dplyr::arrange(
-      seqnames, start, end, coverage,
-      ClinVar != ".",                          # Pathogenic/Likely pathogenic first
-      desc(CADD_PHED),                         # High CADD score first
-      AF_gnomAD                                # Rare variants first (low AF)
+      seqnames, start, end,
+      dplyr::desc(ClinVar != "."),
+      dplyr::desc(CADD_PHED),
+      AF_gnomAD
     )
-    
 
-  cat("Variants after deduplication:", nrow(intersect_df), "\n")
-  cat("Duplicates removed:", nrow(bed2_hits) - nrow(intersect_df), "\n\n")
+  cat("Annotated variants:", nrow(intersect_df), "\n\n")
 
   # ==============================================================================
   # ADD HELPER COLUMNS FOR HIGHLIGHTING

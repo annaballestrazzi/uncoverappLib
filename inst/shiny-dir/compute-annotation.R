@@ -129,7 +129,7 @@ intBED <- eventReactive(input$calc_annotations, {
 
   result <- parallel::mclapply(query_by_chr, function(chr_gr) {
     Rsamtools::scanTabix(file.name, param = chr_gr)
-  }, mc.cores = min(4, parallel::detectCores() - 1))
+  }, mc.cores = if (.Platform$OS.type == "windows") 1L else max(1L, min(4L, parallel::detectCores() - 1L, na.rm = TRUE)))
 
   result <- unlist(result, recursive = FALSE)
   
@@ -154,7 +154,9 @@ intBED <- eventReactive(input$calc_annotations, {
   
   dff <- lapply(result, function(elt) {
     if (length(elt) == 0) return(data.frame())
-    read.csv(textConnection(elt), sep="\t", header=FALSE, stringsAsFactors = FALSE)
+    # colClasses = "character": otherwise R turns "T" (tolerated) into TRUE
+    read.csv(textConnection(elt), sep="\t", header=FALSE, stringsAsFactors = FALSE,
+             colClasses = "character", quote = "")
   })
   
   valid_dfs <- dff[sapply(dff, nrow) > 0]
@@ -205,6 +207,8 @@ intBED <- eventReactive(input$calc_annotations, {
   bedB$Chromosome <- paste0("chr", bedB[[1]])
   bedB <- bedB[, -1]
   bedB$Chromosome <- as.character(bedB$Chromosome)
+  bedB$start <- as.integer(bedB$start)
+  bedB$end <- as.integer(bedB$end)
   bedB$AF_gnomAD <- suppressWarnings(as.numeric(bedB$AF_gnomAD))
   bedB$CADD_PHED <- suppressWarnings(as.numeric(bedB$CADD_PHED))
   

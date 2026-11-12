@@ -396,7 +396,7 @@ buildInput <- function(geneList,
   
   # Convert target BED to GRanges (1-based)
   target_bed_1based <- for_bed
-  if (input_coord_system == "0-based") {
+  if (type_input == "target" && type_coverage == "bed" && input_coord_system == "0-based") {
     target_bed_1based <- target_bed_1based %>% dplyr::mutate(start = start + 1)
   }
   
@@ -404,16 +404,22 @@ buildInput <- function(geneList,
     target_bed_1based, 
     keep.extra.columns = TRUE
   )
+  # Merge overlapping intervals of the same gene (e.g. exons of alternative
+  # transcripts) so that every base is counted once per gene
+  for_grange <- unlist(GenomicRanges::reduce(split(for_grange, for_grange$SYMBOL)))
+  for_grange$SYMBOL <- names(for_grange)
+  names(for_grange) <- NULL
   
 if (type_coverage == "bam") {
     message("Processing BAM files with pileup...")
     
     # Check chromosome availability
     message("Checking BAM chromosome availability...")
-    idx_stats <- system(paste0("samtools idxstats '", list_coverage()[1], "'"), intern = TRUE)
-    idx_df <- read.table(text = idx_stats, header = FALSE, 
-                         col.names = c("seqnames", "length", "mapped", "unmapped"),
-                         stringsAsFactors = FALSE)
+    # Read the BAM index (.bai) with Rsamtools: same information as "samtools idxstats",
+    # no external program needed (list_coverage is a vector: no "()")
+    idx_df <- as.data.frame(Rsamtools::idxstatsBam(list_coverage[1]))
+    colnames(idx_df) <- c("seqnames", "length", "mapped", "unmapped")
+    idx_df$seqnames <- as.character(idx_df$seqnames)
     chrs_with_data <- idx_df$seqnames[idx_df$mapped > 0]
     target_chrs <- as.character(unique(GenomicRanges::seqnames(for_grange)))
     available_chrs <- intersect(target_chrs, chrs_with_data)
@@ -432,7 +438,12 @@ if (type_coverage == "bam") {
       as.character(GenomicRanges::seqnames(for_grange)) %in% available_chrs
     ]
     
-    param <- Rsamtools::ScanBamParam(which = for_grange_filtered)
+    # reduce(): regions of different genes may overlap, each base is read once
+    # isDuplicate = FALSE: PCR/optical duplicates are not counted
+    param <- Rsamtools::ScanBamParam(
+      which = GenomicRanges::reduce(for_grange_filtered),
+      flag = Rsamtools::scanBamFlag(isDuplicate = FALSE)
+    )
     p_param <- Rsamtools::PileupParam(
       distinguish_nucleotides = FALSE,
       distinguish_strands = FALSE,
@@ -445,7 +456,7 @@ if (type_coverage == "bam") {
     lst3 <- lapply(list_coverage, function(i) {
       message(paste("  Processing:", basename(i)))
       pileup_df <- Rsamtools::pileup(i, scanBamParam = param, pileupParam = p_param)
-      pileup_df <- pileup_df[, -5]
+      pileup_df <- pileup_df[, c("seqnames", "pos", "count")]
       pileup_df <- pileup_df[!duplicated(pileup_df), ]
       
       pileup_df %>%
@@ -454,16 +465,31 @@ if (type_coverage == "bam") {
         dplyr::summarise(count = sum(count), .groups = "drop")
     })
     
-    pp <- Reduce(function(...) merge(..., by = c("seqnames", "pos", "end")), lst3)
+    # All target bases, each once; a base without reads in a sample gets 0
+    all_bases <- GenomicRanges::reduce(GenomicRanges::granges(for_grange))
+    w <- GenomicRanges::width(all_bases)
+    pp <- data.frame(
+      seqnames = rep(as.character(GenomicRanges::seqnames(all_bases)), w),
+      pos = rep(GenomicRanges::start(all_bases), w) + sequence(w) - 1L,
+      stringsAsFactors = FALSE
+    )
+    pp$end <- pp$pos
+    for (k in seq_along(lst3)) {
+      s <- as.data.frame(lst3[[k]])[, c("seqnames", "pos", "count")]
+      s$seqnames <- as.character(s$seqnames)
+      colnames(s)[3] <- paste0("count", k)
+      pp <- merge(pp, s, by = c("seqnames", "pos"), all.x = TRUE)
+    }
     pp[is.na(pp)] <- 0
+    pp <- pp[, c("seqnames", "pos", "end", paste0("count", seq_along(lst3)))]
     colnames(pp)[1:3] <- c("seqnames", "start", "end")
     
     # Add SYMBOL
     message("Adding gene annotations to BAM coverage...")
     pp_gr <- GenomicRanges::makeGRangesFromDataFrame(pp, keep.extra.columns = TRUE)
-    overlaps <- GenomicRanges::findOverlaps(pp_gr, for_grange_filtered, type = "any")
+    overlaps <- GenomicRanges::findOverlaps(pp_gr, for_grange, type = "any")
     pp_gr_matched <- pp_gr[queryHits(overlaps)]
-    mcols(pp_gr_matched)$SYMBOL <- for_grange_filtered[subjectHits(overlaps)]$SYMBOL
+    mcols(pp_gr_matched)$SYMBOL <- for_grange[subjectHits(overlaps)]$SYMBOL
     pp <- as.data.frame(pp_gr_matched) %>%
       dplyr::select(-width, -strand) %>%
       dplyr::distinct()
@@ -528,39 +554,36 @@ if (type_coverage == "bam") {
       return(df_trimmed)
     })
     
-    df_list <- df_list[sapply(df_list, nrow) > 0]
-    
-    if (length(df_list) == 0) {
+    if (all(sapply(df_list, nrow) == 0)) {
       stop("ERROR: No coverage data overlaps with target regions!")
     }
-    
-    if (length(df_list) == 1) {
-      pp <- df_list[[1]]
-    } else {
-      pp <- df_list[[1]]
-      for (i in 2:length(df_list)) {
-        pp <- merge(pp, df_list[[i]], 
-                    by = c("seqnames", "start", "end", "SYMBOL"),  # ← AGGIUNGI SYMBOL
-                    all = TRUE, suffixes = c("", paste0(".sample", i)))
-      }
+
+    # Common blocks for all samples: cut at every block boundary of every sample
+    # and at every target boundary, so samples are compared block by block.
+    # Target bases missing from a coverage file get 0.
+    sample_grs <- lapply(df_list, function(d) {
+      GenomicRanges::GRanges(as.character(d$seqnames),
+                             IRanges::IRanges(d$start, d$end), count = d$count)
+    })
+    pieces <- GenomicRanges::disjoin(c(
+      GenomicRanges::granges(for_grange),
+      unlist(GenomicRanges::GRangesList(lapply(sample_grs, GenomicRanges::granges)))))
+    pp <- data.frame(seqnames = as.character(GenomicRanges::seqnames(pieces)),
+                     start = GenomicRanges::start(pieces),
+                     end = GenomicRanges::end(pieces),
+                     stringsAsFactors = FALSE)
+    for (k in seq_along(sample_grs)) {
+      v <- numeric(length(pieces))
+      h <- GenomicRanges::findOverlaps(pieces, sample_grs[[k]])
+      v[S4Vectors::queryHits(h)] <- sample_grs[[k]]$count[S4Vectors::subjectHits(h)]
+      pp[[paste0("count", k)]] <- v
     }
-    
-    pp[is.na(pp)] <- 0
-    # Add SYMBOL annotation for BED coverage (same as BAM)
-    message("Adding gene annotations to BED coverage...")
-    pp_gr <- GenomicRanges::makeGRangesFromDataFrame(pp, keep.extra.columns = TRUE)
-    overlaps <- GenomicRanges::findOverlaps(pp_gr, for_grange, type = "any")
-    
-    if (length(overlaps) > 0) {
-      pp_gr_matched <- pp_gr[queryHits(overlaps)]
-      mcols(pp_gr_matched)$SYMBOL <- for_grange[subjectHits(overlaps)]$SYMBOL
-      pp <- as.data.frame(pp_gr_matched) %>%
-        dplyr::select(-width, -strand) %>%
-        dplyr::distinct()
-      message(paste("Added SYMBOL to", nrow(pp), "positions"))
-    } else {
-      warning("No overlaps found between BED coverage and target regions")
-    }
+
+    # Add SYMBOL (a block shared by two genes appears once per gene)
+    h <- GenomicRanges::findOverlaps(pieces, for_grange)
+    pp <- pp[S4Vectors::queryHits(h), , drop = FALSE]
+    pp$SYMBOL <- for_grange$SYMBOL[S4Vectors::subjectHits(h)]
+    rownames(pp) <- NULL
   }
   
   
@@ -578,9 +601,10 @@ if (type_coverage == "bam") {
   
   # Check missing genes (OUTSIDE if/else)
   if ("SYMBOL" %in% colnames(pp)) {
-    target_genes <- unique(for_grange$SYMBOL)
-    covered_genes <- unique(pp$SYMBOL)
-    missing_genes <- setdiff(target_genes, covered_genes)
+    # Every gene is in the table now (0x if no reads): list genes with no reads at all
+    count_cols_check <- setdiff(colnames(pp), c("seqnames", "start", "end", "SYMBOL"))
+    has_reads <- tapply(rowSums(pp[, count_cols_check, drop = FALSE]) > 0, pp$SYMBOL, any)
+    missing_genes <- names(has_reads)[!has_reads]
     
     if (length(missing_genes) > 0) {
       warning(paste(length(missing_genes), "genes have NO coverage!"))
@@ -623,56 +647,29 @@ if (type_coverage == "bam") {
 
   colnames(ppinp)[colnames(ppinp) %in% sample_cols] <- samples[seq_len(n)]
   
-  # Create GRanges
-  for_range_pp <- GenomicRanges::makeGRangesFromDataFrame(
-    ppinp,
-    keep.extra.columns = TRUE
-  )
-  
-  # Find overlaps
-  tp <- GenomicRanges::findOverlaps(
-    query = for_range_pp,
-    subject = for_grange,
-    type = "any",
-    select = "all"
-  )
-  
-  # Merge coverage with gene annotations
-  sts_df <- data.frame(
-    for_range_pp[queryHits(tp), ],
-    for_grange[subjectHits(tp), ]
-  )
-  
-  statistiche <- sts_df[!duplicated(sts_df[, c("start", "end", "SYMBOL")]), ]
-  statistiche <- subset(
-    statistiche,
-    select = -c(width, strand, seqnames.1, start.1, end.1, width.1, strand.1)
-  )
-  
-  colnames(statistiche)[1:3] <- c("chromosome", "start", "end")
-  
-  merge_g <- dplyr::full_join(target_bed_1based, statistiche, by = "SYMBOL",
-                              relationship = "many-to-many")
-  
-  col_name <- colnames(merge_g)
-  # Trova colonne sample (esclude coordinate e SYMBOL)
-  coord_cols_stat <- c("chromosome", "start.x", "end.x", "start.y", "end.y", "SYMBOL", "chr", "start", "end", "width")
-  col.sub <- setdiff(col_name, coord_cols_stat)
-  merge_g[col.sub] <- sapply(merge_g[col.sub], as.numeric)
-  
-  # Calculate interval widths (1-based: end - start + 1)
-  merge_g$width <- merge_g$end.x - merge_g$start.x + 1
-  
+  # Width of each coverage row (1 for BAM, block length for BED).
+  # No join with the target table: SYMBOL is already on every row.
+  ppinp$width <- ppinp$end - ppinp$start + 1
+  col.sub <- samples[seq_len(n)]
+
   # Prepare per-sample data
   x <- lapply(col.sub, function(i) {
-    x_df <- merge_g %>%
-      dplyr::select("chromosome", "start.x", "end.x", "SYMBOL", "width", 
-                   tidyselect::all_of(i))
+    x_df <- ppinp[, c("seqnames", "start", "end", "SYMBOL", "width", i)]
     colnames(x_df)[6] <- "value"
+    x_df$value <- as.numeric(x_df$value)
     x_df$sample <- i
     x_df
   })
   
+  # Number of contiguous regions below threshold (adjacent low bases/blocks = 1 region)
+  count_low_regions <- function(chr, start, end, low) {
+    low[is.na(low)] <- FALSE
+    if (!any(low)) return(0L)
+    o <- order(chr, start)
+    chr <- chr[o][low[o]]; start <- start[o][low[o]]; end <- end[o][low[o]]
+    n <- length(start)
+    sum(c(TRUE, chr[-1] != chr[-n] | start[-1] != end[-n] + 1L))
+  }
   # Calculate statistics with proper weighting
   statistical_operation <- function(df) {
     df <- df %>% dplyr::filter(!is.na(value), !is.na(width), width > 0)
@@ -706,7 +703,7 @@ if (type_coverage == "bam") {
                 df_sub$value[which(cumw >= sum(df_sub$width) / 2)[1]]
             }
         },
-        number_of_intervals_under_20x = sum(value < 20, na.rm = TRUE),
+        number_of_intervals_under_20x = count_low_regions(seqnames, start, end, value < 20),
         bases_under_20x = sum(width[value < 20], na.rm = TRUE),
         percentage_bases_under_20x = (sum(width[value < 20], na.rm = TRUE) / 
                                       sum(width, na.rm = TRUE)) * 100,
@@ -856,14 +853,14 @@ if (!is.null(annotation_file) && file.exists(annotation_file)) {
     # Identify count columns
     count_cols_out <- grep("^count_", colnames(pp_output), value = TRUE)
     
-    # Filter rows where at least one sample is <= threshold (OR logic)
+    # Filter rows where at least one sample is < threshold (OR logic)
     low_cov_mask <- apply(pp_output[, count_cols_out, drop = FALSE], 1, function(row) {
-      any(row <= coverage_threshold, na.rm = TRUE)
+      any(row < coverage_threshold, na.rm = TRUE)
     })
     
     low_cov_df <- pp_output[low_cov_mask, c("chromosome", "start", "end", "SYMBOL", count_cols_out)]
     
-    message(paste("Rows with at least one sample <=", coverage_threshold, "x:", nrow(low_cov_df)))
+    message(paste("Rows with at least one sample <", coverage_threshold, "x:", nrow(low_cov_df)))
     
     if (nrow(low_cov_df) == 0) {
       message("WARNING: No positions found below threshold, xlsx not written")
@@ -898,13 +895,13 @@ if (!is.null(annotation_file) && file.exists(annotation_file)) {
         openxlsx::conditionalFormatting(
           wb, "Low Coverage",
           cols = col_idx, rows = 2:(nrows_data + 1),
-          rule = paste0("<=", coverage_threshold),
+          rule = paste0("<", coverage_threshold),
           style = openxlsx::createStyle(fgFill = "#FFB6C1")  # rosso chiaro
         )
         openxlsx::conditionalFormatting(
           wb, "Low Coverage",
           cols = col_idx, rows = 2:(nrows_data + 1),
-          rule = paste0(">", coverage_threshold),
+           rule = paste0(">=", coverage_threshold),
           style = openxlsx::createStyle(fgFill = "#90EE90")  # verde chiaro
         )
       }

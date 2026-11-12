@@ -175,24 +175,18 @@ server <- function (input, output, session){
       threshold <- as.numeric(input$preprocess_coverage_filter)
 
       keep <- apply(data[, sample_cols, drop = FALSE], 1, function(row) {
-        any(!is.na(row) & as.numeric(row) <= threshold)
+        any(!is.na(row) & as.numeric(row) < threshold)
       })
       
       filtered <- data[keep, ]
       
-      # Per i campioni sopra soglia, sostituisci con ">N"
-      for (col in sample_cols) {
-        above <- !is.na(filtered[[col]]) & filtered[[col]] > threshold
-        filtered[[col]] <- as.character(filtered[[col]])
-        filtered[[col]][above] <- paste0(">", threshold)
-      }
       
       # NA rimangono vuoti
-      # Per i campioni sopra soglia, sostituisci con ">N"
+      # Per i campioni sopra soglia, sostituisci con ">=N"
       for (col in sample_cols) {
-        above <- !is.na(filtered[[col]]) & filtered[[col]] > threshold
+        above <- !is.na(filtered[[col]]) & filtered[[col]] >= threshold
         filtered[[col]] <- as.character(filtered[[col]])
-        filtered[[col]][above] <- paste0(">", threshold)
+        filtered[[col]][above] <- paste0(">=", threshold)
         filtered[[col]][is.na(filtered[[col]])] <- "NA"
       }
       
@@ -213,7 +207,7 @@ server <- function (input, output, session){
         
         df <- coverage_input()
         keep <- apply(df[, sample_cols, drop = FALSE], 1, function(row) {
-          any(!is.na(row) & as.numeric(row) <= threshold)
+          any(!is.na(row) & as.numeric(row) < threshold)
         })
         df[keep, ]
       } else {

@@ -160,11 +160,11 @@ mydata <- reactive({
     )
     
     # Validate that start < end
-    invalid_intervals <- sum(tmp$start >= tmp$end, na.rm = TRUE)
+    invalid_intervals <- sum(tmp$start > tmp$end, na.rm = TRUE)
     validate(
       need(invalid_intervals == 0,
-           paste("Trovati", invalid_intervals, "intervalli con start >= end.",
-                 "\nGli intervalli devono avere start < end."))
+           paste("Trovati", invalid_intervals, "intervalli con start > end.",
+                 "\nGli intervalli devono avere start <= end (start = end per le righe di una sola base)."))
     )
     
     # Rename sample columns
@@ -220,7 +220,7 @@ mydata <- reactive({
     # Remove SYMBOL if present
     if ("SYMBOL" %in% colnames(tmp_pileup)) {
       cat("Removing SYMBOL column (only needed for stat_summ)\n")
-      tmp_pileup <- tmp_pileup %>% dplyr::select(-SYMBOL)
+      tmp_pileup <- tmp_pileup %>% dplyr::select(-SYMBOL) %>% dplyr::distinct()
     }
     
     # Standardize columns
@@ -391,7 +391,7 @@ filtered_low <- eventReactive(input$calc_low_coverage, {
     result <- if (identical(thr, "all")) {
       df
     } else {
-      dplyr::filter(df, is.na(coverage) | coverage <= as.numeric(thr))
+      dplyr::filter(df, is.na(coverage) | coverage < as.numeric(thr))
     }
     
     cat("Result:", nrow(result), "rows\n")
@@ -445,7 +445,7 @@ filtered_low <- eventReactive(input$calc_low_coverage, {
       chromosome == gene_coords$chr,
       end >= gene_coords$start,
       start <= gene_coords$end,
-      is.na(coverage) | coverage <= as.numeric(thr)
+      is.na(coverage) | coverage < as.numeric(thr)
     )
     }
 
@@ -464,7 +464,7 @@ filtered_low <- eventReactive(input$calc_low_coverage, {
     result <- if (identical(thr, "all")) {
       dplyr::filter(df, chromosome == chr_val)
     } else {
-      dplyr::filter(df, chromosome == chr_val, is.na(coverage) | coverage <= as.numeric(thr))
+      dplyr::filter(df, chromosome == chr_val, is.na(coverage) | coverage < as.numeric(thr))
     }
     
     cat("Result:", nrow(result), "rows\n")
@@ -517,7 +517,7 @@ filtered_low <- eventReactive(input$calc_low_coverage, {
         chromosome == region_parts$chr,
         start == region_parts$start,
         end == region_parts$end,
-        is.na(coverage) | coverage <= as.numeric(thr)
+        is.na(coverage) | coverage < as.numeric(thr)
       )
       result <- if (nrow(result_exact) > 0) {
         result_exact
@@ -527,7 +527,7 @@ filtered_low <- eventReactive(input$calc_low_coverage, {
           chromosome == region_parts$chr,
           start <= region_parts$end,
           end >= region_parts$start,
-          is.na(coverage) | coverage <= as.numeric(thr)
+          is.na(coverage) | coverage < as.numeric(thr)
         )
       }
     }
@@ -625,7 +625,7 @@ filtered_high <- reactive({
                           chromosome == chr,
                           end >= start_region, 
                           start <= end_region,
-                          coverage > as.numeric(thr))
+                          coverage >= as.numeric(thr))
   
   cat("HIGH coverage positions:", nrow(result), "\n")
   cat("=== FILTERED_HIGH COMPLETE ===\n")

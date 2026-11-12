@@ -86,7 +86,7 @@ uncover_maxaf_data <- reactive({
   # Se arriviamo qui, abbiamo dati: aggiungi colonne helper
   filtered$highlight_maxaf <- grepl("H|M", filtered$MutationAssessor) & 
                               filtered$ClinVar != "." & 
-                              filtered$M_CAP != "TRUE" &
+                              filtered$M_CAP != "T" &
                               !is.na(filtered$AF_gnomAD) & 
                               filtered$AF_gnomAD < maxAF_threshold
   

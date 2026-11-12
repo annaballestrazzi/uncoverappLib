@@ -308,18 +308,27 @@ coverage_input <- eventReactive(input$process_coverage, {
     
     # Get target regions and convert to 1-based for GenomicRanges
     target_bed <- for_bed()
-    
+    # User target BED in 0-based coordinates: convert to 1-based like the BED coverage
+    # files (same rule as buildInput). Gene-list regions from UCSC are already 1-based.
+    if (input$type_file == "target_bed" && input$type_coverage == "bed" &&
+        input_coord_system == "0-based") {
+        target_bed$start <- target_bed$start + 1
+    }
     for_grange <- GenomicRanges::makeGRangesFromDataFrame(
         target_bed, 
         keep.extra.columns = TRUE
     )
+    # Merge overlapping intervals of the same gene (e.g. exons of alternative
+    # transcripts) so that every base is counted once per gene
+    for_grange <- unlist(GenomicRanges::reduce(split(for_grange, for_grange$SYMBOL)))
+    for_grange$SYMBOL <- names(for_grange)
+    names(for_grange) <- NULL
     if (input$type_coverage == "bam") {
             cat("Processing BAM files with pileup...\n\n")
     
             idx_stats <- tryCatch({
-            result <- system(paste("samtools idxstats", list_coverage()[1]), 
-                            intern = TRUE, ignore.stderr = TRUE)
-            if (length(result) == 0) stop("BAM file not found or not indexed")
+            # Read the BAM index (.bai) with Rsamtools: same information as "samtools idxstats"
+            result <- as.data.frame(Rsamtools::idxstatsBam(list_coverage()[1]))
             result
             }, error = function(e) {
             waiter::waiter_hide()
@@ -333,9 +342,9 @@ coverage_input <- eventReactive(input$process_coverage, {
 
             if (is.null(idx_stats)) return(NULL)
 
-            idx_df <- read.table(text = idx_stats, header = FALSE, 
-                    col.names = c("seqnames", "length", "mapped", "unmapped"),
-                    stringsAsFactors = FALSE)
+            idx_df <- idx_stats
+            colnames(idx_df) <- c("seqnames", "length", "mapped", "unmapped")
+            idx_df$seqnames <- as.character(idx_df$seqnames)
             chrs_with_data <- idx_df$seqnames[idx_df$mapped > 0]
             target_chrs <- as.character(unique(GenomicRanges::seqnames(for_grange)))
             available_chrs <- intersect(target_chrs, chrs_with_data)
@@ -356,8 +365,12 @@ coverage_input <- eventReactive(input$process_coverage, {
             ]
     
             # ORA USA for_grange_filtered:
-            param <- Rsamtools::ScanBamParam(which = for_grange_filtered)
-
+            # reduce(): regions of different genes may overlap, each base is read once
+            # isDuplicate = FALSE: PCR/optical duplicates are not counted
+            param <- Rsamtools::ScanBamParam(
+                which = GenomicRanges::reduce(for_grange_filtered),
+                flag = Rsamtools::scanBamFlag(isDuplicate = FALSE)
+            )
             p_param <- Rsamtools::PileupParam(
             distinguish_nucleotides = FALSE,
             distinguish_strands = FALSE,
@@ -369,7 +382,7 @@ coverage_input <- eventReactive(input$process_coverage, {
         
         lst3 <- lapply(list_coverage(), function(i) {
             pileup_df <- Rsamtools::pileup(i, scanBamParam = param, pileupParam = p_param)
-            pileup_df <- pileup_df[, -5]  # Remove nucleotide column
+            pileup_df <- pileup_df[, c("seqnames", "pos", "count")]
             pileup_df <- pileup_df[!duplicated(pileup_df), ]
             
             # Pileup returns 1-based positions
@@ -379,7 +392,23 @@ coverage_input <- eventReactive(input$process_coverage, {
                 dplyr::summarise(count = sum(count), .groups = "drop")
         })
         
-        pp <- Reduce(function(...) merge(..., by = c("seqnames", "pos", "end")), lst3)
+        # All target bases, each once; a base without reads in a sample gets 0
+        all_bases <- GenomicRanges::reduce(GenomicRanges::granges(for_grange))
+        w <- GenomicRanges::width(all_bases)
+        pp <- data.frame(
+          seqnames = rep(as.character(GenomicRanges::seqnames(all_bases)), w),
+          pos = rep(GenomicRanges::start(all_bases), w) + sequence(w) - 1L,
+          stringsAsFactors = FALSE
+        )
+        pp$end <- pp$pos
+        for (k in seq_along(lst3)) {
+          s <- as.data.frame(lst3[[k]])[, c("seqnames", "pos", "count")]
+          s$seqnames <- as.character(s$seqnames)
+          colnames(s)[3] <- paste0("count", k)
+          pp <- merge(pp, s, by = c("seqnames", "pos"), all.x = TRUE)
+        }
+        pp[is.na(pp)] <- 0
+        pp <- pp[, c("seqnames", "pos", "end", paste0("count", seq_along(lst3)))]
         colnames(pp)[1:3] <- c("seqnames", "start", "end")
         # Fix column names: use actual sample names with count_ prefix
         sample_names <- tools::file_path_sans_ext(basename(list_coverage()))
@@ -409,9 +438,9 @@ coverage_input <- eventReactive(input$process_coverage, {
 
         # ← AGGIUNGI SYMBOL QUI
         pp_gr <- GenomicRanges::makeGRangesFromDataFrame(pp, keep.extra.columns = TRUE)
-        overlaps <- GenomicRanges::findOverlaps(pp_gr, for_grange_filtered, type = "any")
+        overlaps <- GenomicRanges::findOverlaps(pp_gr, for_grange, type = "any")
         pp_gr_matched <- pp_gr[queryHits(overlaps)]
-        mcols(pp_gr_matched)$SYMBOL <- for_grange_filtered[subjectHits(overlaps)]$SYMBOL
+        mcols(pp_gr_matched)$SYMBOL <- for_grange[subjectHits(overlaps)]$SYMBOL
         pp <- as.data.frame(pp_gr_matched) %>%
             dplyr::select(-width, -strand) %>%
             dplyr::distinct()
@@ -544,31 +573,38 @@ coverage_input <- eventReactive(input$process_coverage, {
             return(df_trimmed)
         })  # ✅ CHIUDI IL LAPPLY QUI!
         
-        # Remove empty dataframes
-        df_list <- df_list[sapply(df_list, nrow) > 0]
-        
+        if (any(sapply(df_list, is.null))) return(NULL)
         validate(
-            need(length(df_list) > 0, 
+            need(any(sapply(df_list, nrow) > 0),
                 "⚠️ No coverage data overlaps with target regions!")
         )
-        
-        cat(paste("Merging", length(df_list), "trimmed coverage files...\n"))
-        
-        # Merge all samples by genomic coordinates
-        if (length(df_list) == 1) {
-            pp <- df_list[[1]]
-        } else {
-            pp <- df_list[[1]]
-            for (i in 2:length(df_list)) {
-                pp <- merge(
-                    pp, 
-                    df_list[[i]], 
-                    by = c("seqnames", "start", "end", "SYMBOL"), 
-                    all = TRUE,
-                    suffixes = c("", paste0(".sample", i))
-                )
-            }
+
+        # Common blocks for all samples: cut at every block boundary of every sample
+        # and at every target boundary, so samples are compared block by block.
+        # Target bases missing from a coverage file get 0.
+        sample_grs <- lapply(df_list, function(d) {
+            GenomicRanges::GRanges(as.character(d$seqnames),
+                                   IRanges::IRanges(d$start, d$end), count = d$count)
+        })
+        pieces <- GenomicRanges::disjoin(c(
+            GenomicRanges::granges(for_grange),
+            unlist(GenomicRanges::GRangesList(lapply(sample_grs, GenomicRanges::granges)))))
+        pp <- data.frame(seqnames = as.character(GenomicRanges::seqnames(pieces)),
+                         start = GenomicRanges::start(pieces),
+                         end = GenomicRanges::end(pieces),
+                         stringsAsFactors = FALSE)
+        for (k in seq_along(sample_grs)) {
+            v <- numeric(length(pieces))
+            h <- GenomicRanges::findOverlaps(pieces, sample_grs[[k]])
+            v[S4Vectors::queryHits(h)] <- sample_grs[[k]]$count[S4Vectors::subjectHits(h)]
+            pp[[paste0("count", k)]] <- v
         }
+
+        # Add SYMBOL (a block shared by two genes appears once per gene)
+        h <- GenomicRanges::findOverlaps(pieces, for_grange)
+        pp <- pp[S4Vectors::queryHits(h), , drop = FALSE]
+        pp$SYMBOL <- for_grange$SYMBOL[S4Vectors::subjectHits(h)]
+        rownames(pp) <- NULL
       
         # Replace NA with 0 for missing coverage
         # Fix column names: use actual sample names with count_ prefix
@@ -614,9 +650,10 @@ coverage_input <- eventReactive(input$process_coverage, {
     )
 
     # Check for missing genes
-    target_genes <- unique(for_grange$SYMBOL)
-    covered_genes <- unique(pp$SYMBOL)
-    missing_genes <- setdiff(target_genes, covered_genes)
+    # Every gene is in the table now (0x if no reads): list genes with no reads at all
+    count_cols_check <- setdiff(colnames(pp), c("seqnames", "start", "end", "SYMBOL"))
+    has_reads <- tapply(rowSums(pp[, count_cols_check, drop = FALSE]) > 0, pp$SYMBOL, any)
+    missing_genes <- names(has_reads)[!has_reads]
 
     if (length(missing_genes) > 0) {
         cat(paste("\nWARNING:", length(missing_genes), "genes have NO coverage!\n"))
@@ -698,7 +735,7 @@ stat_summ <- reactive({
 
     # Interval width for weighted stats
     ppinp$width <- ppinp$end - ppinp$start + 1
-    ppinp[sample_cols] <- sapply(ppinp[sample_cols], as.numeric)
+    ppinp[sample_cols] <- lapply(ppinp[sample_cols], as.numeric)
 
     # Prepare per-sample dataframes
     x <- lapply(seq_along(sample_cols), function(j) {
@@ -714,6 +751,16 @@ stat_summ <- reactive({
         x_df$sample <- i
         x_df
     })
+
+    # Number of contiguous regions below threshold (adjacent low bases/blocks = 1 region)
+    count_low_regions <- function(chr, start, end, low) {
+        low[is.na(low)] <- FALSE
+        if (!any(low)) return(0L)
+        o <- order(chr, start)
+        chr <- chr[o][low[o]]; start <- start[o][low[o]]; end <- end[o][low[o]]
+        n <- length(start)
+        sum(c(TRUE, chr[-1] != chr[-n] | start[-1] != end[-n] + 1L))
+    }
 
     # Statistical calculation (weighted mean, correct percentage)
     statistical_operation <- function(df) {
@@ -746,7 +793,7 @@ stat_summ <- reactive({
                                         df_sub$value[which(cumw >= sum(df_sub$width) / 2)[1]]
                                     }
                                 },
-                number_of_intervals_under_20x = sum(value < 20, na.rm = TRUE),
+                number_of_intervals_under_20x = count_low_regions(chromosome, start, end, value < 20),
                 bases_under_20x = sum(width[value < 20], na.rm = TRUE),
                 percentage_bases_under_20x = (sum(width[value < 20], na.rm = TRUE) / 
                                               sum(width, na.rm = TRUE)) * 100,
