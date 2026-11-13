@@ -389,10 +389,13 @@ coverage_input <- eventReactive(input$process_coverage, {
     
             # ORA USA for_grange_filtered:
             # reduce(): regions of different genes may overlap, each base is read once
-            # isDuplicate = FALSE: PCR/optical duplicates are not counted
+            # Reads not counted (as samtools depth and mosdepth): PCR/optical duplicates,
+            # secondary alignments and reads failing quality checks. Supplementary are counted.
             param <- Rsamtools::ScanBamParam(
                 which = GenomicRanges::reduce(for_grange_filtered),
-                flag = Rsamtools::scanBamFlag(isDuplicate = FALSE)
+                flag = Rsamtools::scanBamFlag(isDuplicate = FALSE,
+                                              isSecondaryAlignment = FALSE,
+                                              isNotPassingQualityControls = FALSE)
             )
             p_param <- Rsamtools::PileupParam(
             distinguish_nucleotides = FALSE,
