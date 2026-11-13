@@ -409,10 +409,22 @@ coverage_input <- eventReactive(input$process_coverage, {
             pileup_df <- pileup_df[!duplicated(pileup_df), ]
             
             # Pileup returns 1-based positions
-            pileup_df %>%
+            pileup_df <- pileup_df %>%
                 dplyr::mutate(end = pos) %>%
                 dplyr::group_by(seqnames, pos, end) %>%
                 dplyr::summarise(count = sum(count), .groups = "drop")
+
+            # Overlapping mates of a pair (same fragment): count the overlapping bases once
+            mate_overlap <- if (is.null(input$mate_overlap)) "all" else input$mate_overlap
+            if (mate_overlap != "none") {
+                ov <- mate_overlap_counts(i, param, as.numeric(input$MAPQ), as.numeric(input$base_qual),
+                                          proper_only = (mate_overlap == "proper"))
+                pileup_df$seqnames <- as.character(pileup_df$seqnames)
+                pileup_df <- dplyr::left_join(pileup_df, ov, by = c("seqnames", "pos"))
+                pileup_df$count <- pileup_df$count - ifelse(is.na(pileup_df$n_overlap), 0L, pileup_df$n_overlap)
+                pileup_df$n_overlap <- NULL
+            }
+            pileup_df
         })
         
         # All target bases, each once; a base without reads in a sample gets 0
@@ -852,3 +864,85 @@ stat_summ <- reactive({
     }
     return(out_r)
 })
+
+# Overlapping mates of a read pair (same DNA fragment read from both ends):
+# Rsamtools::pileup() counts the overlapping bases twice. This function returns,
+# for each base, how many pairs were counted twice: both mates cover the base and
+# both pass the pileup filters (MAPQ, base quality, base not N). Subtracting it
+# from the pileup count gives "count once" (as samtools depth -s; as mosdepth with
+# proper_only = TRUE). Deletions count as covered, as in the pileup.
+# Target regions are read in blocks, to keep memory low with large BAM files.
+mate_overlap_counts <- function(bam, param, min_mapq, min_bq, proper_only = FALSE,
+                                regions_per_block = 500) {
+  empty <- data.frame(seqnames = character(), pos = integer(), n_overlap = integer(),
+                      stringsAsFactors = FALSE)
+  flag <- Rsamtools::bamFlagAND(
+    Rsamtools::bamFlag(param, asInteger = TRUE),
+    Rsamtools::scanBamFlag(isPaired = TRUE, isUnmappedQuery = FALSE, hasUnmappedMate = FALSE,
+                           isSupplementaryAlignment = FALSE,
+                           isProperPair = if (proper_only) TRUE else NA))
+  wh <- Rsamtools::bamWhich(param)
+  regions <- GenomicRanges::sort(GenomicRanges::GRanges(rep(names(wh), lengths(wh)),
+                                                        unlist(wh, use.names = FALSE)))
+  blocks <- split(regions, ceiling(seq_along(regions) / regions_per_block))
+  # pairs already handled in a previous block (kept only while they can reach the next block)
+  done <- data.frame(q = character(0), chr = character(0), end = integer(0), stringsAsFactors = FALSE)
+  res <- vector("list", length(blocks))
+  for (bl in seq_along(blocks)) {
+    b1 <- blocks[[bl]][1]
+    done <- done[done$chr == as.character(GenomicRanges::seqnames(b1)) &
+                   done$end >= GenomicRanges::start(b1), , drop = FALSE]
+    sb <- Rsamtools::scanBam(bam, param = Rsamtools::ScanBamParam(
+      which = blocks[[bl]], flag = flag,
+      what = c("qname", "flag", "rname", "pos", "cigar", "mapq", "seq", "qual")))
+    col <- function(x) do.call(c, unname(lapply(sb, `[[`, x)))
+    q <- col("qname")
+    if (length(q) == 0) next
+    fl <- col("flag"); chr <- as.character(col("rname")); st <- col("pos")
+    cig <- col("cigar"); mq <- col("mapq")
+    # pair the two mates (a read in two target regions is returned twice: keep it once)
+    qid <- match(q, unique(q)); m2 <- bitwAnd(fl, 128L) > 0
+    ok <- !is.na(mq) & mq >= min_mapq & !duplicated(qid * 2 + m2) & !(q %in% done$q)
+    i <- which(ok); i <- i[qid[i] %in% qid[i][duplicated(qid[i])]]
+    if (length(i) == 0) next
+    i <- i[order(qid[i], m2[i])]
+    a <- i[seq(1, length(i), 2)]; b <- i[seq(2, length(i), 2)]
+    en <- st + GenomicAlignments::cigarWidthAlongReferenceSpace(cig) - 1L
+    done <- rbind(done, data.frame(q = q[a], chr = chr[a], end = pmax(en[a], en[b]),
+                                   stringsAsFactors = FALSE))
+    s <- pmax(st[a], st[b]); e <- pmin(en[a], en[b])
+    ov <- qid[a] == qid[b] & chr[a] == chr[b] & !is.na(s) & !is.na(e) & s <= e
+    if (!any(ov)) next
+    a <- a[ov]; b <- b[ov]; s <- s[ov]; e <- e[ov]; w <- e - s + 1L
+    qual <- col("qual"); sq <- col("seq")
+    # does each mate pass the base filters at each overlapping base?
+    pass <- function(m) {
+      off <- s - st[m] + 1L
+      ql <- GenomicAlignments::sequenceLayer(qual[m], cig[m], from = "query", to = "reference",
+                                             D.letter = "~", N.letter = "!")
+      ok_b <- as.integer(unlist(Biostrings::subseq(ql, off, width = w))) - 33L >= min_bq
+      has_n <- which(Biostrings::vcountPattern("N", sq[m]) > 0)   # pileup ignores N bases
+      if (length(has_n) > 0) {
+        sl <- GenomicAlignments::sequenceLayer(Biostrings::BStringSet(sq[m][has_n]), cig[m][has_n],
+                                               from = "query", to = "reference",
+                                               D.letter = "A", N.letter = "A")
+        is_n <- as.integer(unlist(Biostrings::subseq(sl, off[has_n], width = w[has_n]))) == 78L
+        first <- cumsum(c(0L, w))[has_n]
+        idx <- unlist(lapply(seq_along(has_n), function(k) first[k] + seq_len(w[has_n[k]])))
+        ok_b[idx[is_n]] <- FALSE
+      }
+      ok_b
+    }
+    both <- pass(a) & pass(b)
+    if (!any(both)) next
+    res[[bl]] <- data.frame(seqnames = rep(chr[a], w)[both],
+                            pos = (rep(s, w) + sequence(w) - 1L)[both], stringsAsFactors = FALSE)
+  }
+  res <- do.call(rbind, res)
+  if (is.null(res) || nrow(res) == 0) return(empty)
+  out <- lapply(split(res$pos, res$seqnames), function(p) {
+    p0 <- min(p); n <- tabulate(p - p0 + 1L); k <- which(n > 0)
+    data.frame(pos = p0 + k - 1L, n_overlap = n[k])
+  })
+  do.call(rbind, Map(function(x, nm) cbind(seqnames = nm, x, stringsAsFactors = FALSE), out, names(out)))
+}

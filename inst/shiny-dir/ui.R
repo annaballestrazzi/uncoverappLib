@@ -118,6 +118,12 @@ preprocess <- function() {
                             options = list(`actions-box` = TRUE), 
                             multiple = FALSE,
                             selected = 20),
+                          radioButtons("mate_overlap",
+                            label = "Bases read by both reads of a pair (same fragment)",
+                            choices = c("Count once, all pairs (as samtools depth -s)" = "all",
+                                        "Count once, proper pairs only (as mosdepth)" = "proper",
+                                        "Count twice (as samtools depth)" = "none"),
+                            selected = "all"),
                           helpText(em("These parameters apply only to BAM pileup processing"))
                         ),
 
